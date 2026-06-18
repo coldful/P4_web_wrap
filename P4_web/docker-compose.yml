@@ -1,0 +1,31 @@
+services:
+  api:
+    build: .
+    command: uvicorn p4_web.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      P4_WEB_DATABASE_URL: postgresql+asyncpg://p4web:p4web@postgres:5432/p4web
+      P4_WEB_LOCAL_STORAGE_ROOT: /data/storage
+      P4_WEB_WORKSPACE_ROOT: /data/workspaces
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - p4web-data:/data
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: p4web
+      POSTGRES_USER: p4web
+      POSTGRES_PASSWORD: p4web
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres-data:
+  p4web-data:
+

@@ -1,0 +1,1065 @@
+import { api, getApiBase, setApiBase } from "./api.js";
+import { icon } from "./icons.js";
+import { getModuleJobConfig, isModuleJob, MODULE_JOB_SCHEMAS } from "./job-config.js";
+import {
+  escapeHtml,
+  formatBytes,
+  formatDate,
+  shortId,
+  statusBadge,
+} from "./utils.js";
+
+const RECENT_JOBS_KEY = "p4web.client.recentJobs";
+const SELECTED_PROJECT_KEY = "p4web.client.selectedProjectId";
+const SELECTED_VERSION_KEY = "p4web.client.selectedVersionId";
+const SELECTED_JOB_KEY = "p4web.client.selectedJobId";
+const LANGUAGE_KEY = "p4web.client.language";
+
+const state = {
+  health: null,
+  projects: [],
+  versions: [],
+  files: [],
+  projectArtifacts: [],
+  versionArtifacts: [],
+  jobs: [],
+  jobLogs: [],
+  selectedProjectId: localStorage.getItem(SELECTED_PROJECT_KEY),
+  selectedVersionId: localStorage.getItem(SELECTED_VERSION_KEY),
+  selectedJobId: localStorage.getItem(SELECTED_JOB_KEY),
+  activeTab: "overview",
+  language: localStorage.getItem(LANGUAGE_KEY) || "de",
+  busy: false,
+  modal: null,
+  toast: null,
+};
+
+const root = document.getElementById("app");
+
+function currentProject() {
+  return state.projects.find((project) => project.id === state.selectedProjectId) || null;
+}
+
+function currentVersion() {
+  return state.versions.find((version) => version.id === state.selectedVersionId) || null;
+}
+
+function currentJob() {
+  return state.jobs.find((job) => job.id === state.selectedJobId) || null;
+}
+
+function isRunnable() {
+  return Boolean(currentProject() && currentVersion());
+}
+
+function render() {
+  const project = currentProject();
+  const version = currentVersion();
+  root.innerHTML = `
+    <div class="app-shell">
+      ${renderTopbar()}
+      ${renderRibbon(project, version)}
+      <main class="workspace">
+        ${renderProjectPanel()}
+        ${renderMainPanel(project, version)}
+        ${renderJobPanel()}
+      </main>
+      ${state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : ""}
+      ${state.modal ? renderModal() : ""}
+    </div>
+  `;
+  bindEvents();
+}
+
+function renderTopbar() {
+  const health = state.health?.status || "offline";
+  return `
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">P4</div>
+        <div class="brand-title">
+          <strong>Publishing Server P4</strong>
+          <span>${statusBadge(health)} ${escapeHtml(state.health?.environment || "client")}</span>
+        </div>
+      </div>
+      <div class="connection">
+        <input id="api-base-input" value="${escapeHtml(getApiBase())}" aria-label="API base" />
+        <button class="icon-button" data-action="save-api-base" title="Connect">${icon("database")}</button>
+      </div>
+      <div class="top-actions">
+        <select id="language-select" class="language-select" title="Language">
+          ${["de", "en", "fr", "es", "pt", "ru", "zh"].map((lang) => `
+            <option value="${lang}" ${lang === state.language ? "selected" : ""}>${lang}</option>
+          `).join("")}
+        </select>
+        <button class="icon-button" data-action="refresh" title="Refresh">${icon("refresh")}</button>
+      </div>
+    </header>
+  `;
+}
+
+function renderRibbon(project, version) {
+  const disabled = isRunnable() ? "" : "disabled";
+  const reviewDisabled = version ? "" : "disabled";
+  return `
+    <nav class="ribbon" aria-label="P4 actions">
+      ${ribbonGroup("File", [
+        tool("new-project", "plus", "Create project"),
+        tool("import-local", "upload", "Import local project"),
+        tool("refresh", "refresh", "Refresh"),
+      ])}
+      ${ribbonGroup("Project", [
+        tool("copy-project", "copy", "Copy project", project ? "" : "disabled"),
+        tool("delete-project", "trash", "Delete project", project ? "" : "disabled"),
+        tool("new-version", "file", "Create version", project ? "" : "disabled"),
+        tool("job:generate_pdf", "pdf", "Generate PDF", disabled),
+        tool("job:generate_html", "html", "Generate HTML", disabled),
+        tool("job:xsl_fo", "file", "XSL-FO", disabled),
+      ])}
+      ${ribbonGroup("Source", [
+        tool("job:cut_source", "scissors", "Cut source", disabled),
+        tool("job:generate_lists", "list", "Generate lists", disabled),
+        tool("job:check_index", "search", "Check index", disabled),
+      ])}
+      ${ribbonGroup("Translation", [
+        tool("job:export_translation", "translate", "Export translation", disabled),
+        tool("job:import_translation", "upload", "Import translation", disabled),
+      ])}
+      ${ribbonGroup("Text Modules", [
+        tool("job:pack_modules", "package", "Pack modules", disabled),
+        tool("job:unpack_modules", "package", "Unpack modules", disabled),
+      ])}
+      ${ribbonGroup("Subsystem", [
+        tool("job:convert_sap_to_bit_xml", "branch", "ETK SAP to bitplant XML", disabled),
+        tool("job:convert_opmanual_to_bit_xml", "file", "Opmanual to bitplant XML", disabled),
+      ])}
+      ${ribbonGroup("Review", [
+        tool("submit-version", "clock", "Submit version", reviewDisabled),
+        tool("approve-version", "check", "Approve version", reviewDisabled),
+        tool("reject-version", "x", "Reject version", reviewDisabled),
+      ])}
+    </nav>
+  `;
+}
+
+function ribbonGroup(title, buttons) {
+  return `
+    <section class="ribbon-group">
+      <div class="ribbon-buttons">${buttons.join("")}</div>
+      <div class="ribbon-title">${escapeHtml(title)}</div>
+    </section>
+  `;
+}
+
+function tool(action, iconName, title, disabled = "") {
+  return `
+    <button class="tool-button" data-action="${escapeHtml(action)}" title="${escapeHtml(title)}" ${disabled}>
+      ${icon(iconName)}
+    </button>
+  `;
+}
+
+function renderProjectPanel() {
+  const rows = state.projects.map((project) => {
+    const active = project.id === state.selectedProjectId ? "active" : "";
+    return `
+      <button class="project-row ${active}" data-project-id="${escapeHtml(project.id)}">
+        <span class="project-glyph">${icon("folder")}</span>
+        <span class="project-meta">
+          <strong>${escapeHtml(project.name)}</strong>
+          <span class="muted small truncate">${escapeHtml(project.default_client || project.slug)}</span>
+          <span class="muted small">${statusBadge(project.lifecycle)}</span>
+        </span>
+      </button>
+    `;
+  }).join("");
+
+  return `
+    <aside class="panel">
+      <div class="panel-header">
+        <h2>Projects</h2>
+        <button class="icon-button" data-action="new-project" title="Create project">${icon("plus")}</button>
+      </div>
+      <div class="panel-body">
+        <div class="project-list">
+          ${rows || `<div class="empty">No projects</div>`}
+        </div>
+      </div>
+    </aside>
+  `;
+}
+
+function renderMainPanel(project, version) {
+  if (!project) {
+    return `
+      <section class="panel main-panel">
+        <div class="panel-header">
+          <div class="project-title">
+            <span class="project-glyph">${icon("folder")}</span>
+            <h1>P4 workspace</h1>
+          </div>
+        </div>
+        <div class="tab-panel">
+          <div class="empty">No project selected</div>
+        </div>
+      </section>
+    `;
+  }
+
+  const tabs = [
+    ["overview", "Overview"],
+    ["versions", "Versions"],
+    ["files", "Files"],
+    ["artifacts", "Artifacts"],
+    ["jobs", "Jobs"],
+  ];
+  return `
+    <section class="panel main-panel">
+      <div class="panel-header">
+        <div class="project-title">
+          <span class="project-glyph">${icon("folder")}</span>
+          <h1>${escapeHtml(project.name)}</h1>
+          ${statusBadge(project.lifecycle)}
+        </div>
+        <button class="icon-button" data-action="new-version" title="Create version">${icon("file")}</button>
+      </div>
+      ${renderSummary(project, version)}
+      <div class="tabs">
+        ${tabs.map(([id, label]) => `
+          <button class="tab ${state.activeTab === id ? "active" : ""}" data-tab="${id}">
+            ${escapeHtml(label)}
+          </button>
+        `).join("")}
+      </div>
+      <div class="tab-panel">${renderActiveTab(project, version)}</div>
+    </section>
+  `;
+}
+
+function renderSummary(project, version) {
+  return `
+    <div class="summary-grid">
+      <div class="metric">
+        <span class="muted small">Client</span>
+        <strong>${escapeHtml(project.default_client || "-")}</strong>
+      </div>
+      <div class="metric">
+        <span class="muted small">Version</span>
+        <strong>${version ? `#${version.version_number}` : "-"}</strong>
+      </div>
+      <div class="metric">
+        <span class="muted small">State</span>
+        <strong>${version ? statusBadge(version.status) : statusBadge("draft")}</strong>
+      </div>
+      <div class="metric">
+        <span class="muted small">Artifacts</span>
+        <strong>${state.versionArtifacts.length || state.projectArtifacts.length}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderActiveTab(project, version) {
+  if (state.activeTab === "versions") return renderVersions();
+  if (state.activeTab === "files") return renderFiles();
+  if (state.activeTab === "artifacts") return renderArtifacts();
+  if (state.activeTab === "jobs") return renderJobsTable();
+  return renderOverview(project, version);
+}
+
+function renderOverview(project, version) {
+  return `
+    <div class="split-two">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>File</th><th>Role</th><th>Size</th><th>SHA256</th></tr>
+          </thead>
+          <tbody>
+            ${state.files.slice(0, 8).map((file) => `
+              <tr>
+                <td class="truncate">${escapeHtml(file.path)}</td>
+                <td>${escapeHtml(file.role)}</td>
+                <td>${formatBytes(file.size_bytes)}</td>
+                <td><span class="muted small">${escapeHtml(shortId(file.sha256))}</span></td>
+              </tr>
+            `).join("") || `<tr><td colspan="4" class="muted">No files</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><h3>Project Sheet</h3></div>
+        <div class="panel-body keyvals">
+          ${kv("Project", project.name)}
+          ${kv("Slug", project.slug)}
+          ${kv("Local path", project.local_path_hint || "-")}
+          ${kv("Selected version", version ? `#${version.version_number}` : "-")}
+          ${kv("Snapshot", version?.snapshot_prefix || "-")}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function kv(key, value) {
+  return `
+    <div class="kv">
+      <span class="muted">${escapeHtml(key)}</span>
+      <span class="truncate">${escapeHtml(value)}</span>
+    </div>
+  `;
+}
+
+function renderVersions() {
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Status</th><th>Label</th><th>Created</th><th>Snapshot</th><th></th></tr>
+        </thead>
+        <tbody>
+          ${state.versions.map((version) => `
+            <tr>
+              <td>#${version.version_number}</td>
+              <td>${statusBadge(version.status)}</td>
+              <td>${escapeHtml(version.label || "")}</td>
+              <td>${escapeHtml(formatDate(version.created_at))}</td>
+              <td><span class="muted small truncate">${escapeHtml(version.snapshot_prefix)}</span></td>
+              <td class="row-actions">
+                <button class="text-button ${version.id === state.selectedVersionId ? "primary" : ""}" data-version-id="${escapeHtml(version.id)}">Select</button>
+              </td>
+            </tr>
+          `).join("") || `<tr><td colspan="6" class="muted">No versions</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderFiles() {
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Path</th><th>Role</th><th>Size</th><th>SHA256</th><th>Storage</th></tr>
+        </thead>
+        <tbody>
+          ${state.files.map((file) => `
+            <tr>
+              <td class="truncate">${escapeHtml(file.path)}</td>
+              <td>${escapeHtml(file.role)}</td>
+              <td>${formatBytes(file.size_bytes)}</td>
+              <td><span class="muted small">${escapeHtml(file.sha256)}</span></td>
+              <td><span class="muted small truncate">${escapeHtml(file.storage_key)}</span></td>
+            </tr>
+          `).join("") || `<tr><td colspan="5" class="muted">No files</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderArtifacts() {
+  const artifacts = state.versionArtifacts.length ? state.versionArtifacts : state.projectArtifacts;
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Kind</th><th>Path</th><th>Size</th><th>Created</th><th>Storage</th></tr>
+        </thead>
+        <tbody>
+          ${artifacts.map((artifact) => `
+            <tr>
+              <td>${escapeHtml(artifact.kind)}</td>
+              <td class="truncate">${escapeHtml(artifact.path)}</td>
+              <td>${formatBytes(artifact.size_bytes)}</td>
+              <td>${escapeHtml(formatDate(artifact.created_at))}</td>
+              <td><span class="muted small truncate">${escapeHtml(artifact.storage_key)}</span></td>
+            </tr>
+          `).join("") || `<tr><td colspan="5" class="muted">No artifacts</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderJobsTable() {
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Job</th><th>Kind</th><th>Status</th><th>Progress</th><th>Created</th><th></th></tr>
+        </thead>
+        <tbody>
+          ${state.jobs.map((job) => `
+            <tr>
+              <td>${escapeHtml(shortId(job.id))}</td>
+              <td>${escapeHtml(job.kind)}</td>
+              <td>${statusBadge(job.status)}</td>
+              <td>${job.progress_current}/${job.progress_total}</td>
+              <td>${escapeHtml(formatDate(job.created_at))}</td>
+              <td class="row-actions">
+                <button class="text-button ${job.id === state.selectedJobId ? "primary" : ""}" data-job-id="${escapeHtml(job.id)}">Open</button>
+              </td>
+            </tr>
+          `).join("") || `<tr><td colspan="6" class="muted">No jobs</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderJobPanel() {
+  const job = currentJob();
+  const logText = state.jobLogs.map((log) => {
+    const ts = formatDate(log.created_at);
+    return `[${ts}] ${log.level.toUpperCase()} ${log.message}`;
+  }).join("\n");
+
+  return `
+    <aside class="panel job-panel">
+      <div class="panel-header">
+        <h2>Jobs</h2>
+        <button class="icon-button" data-action="refresh-jobs" title="Refresh jobs">${icon("refresh")}</button>
+      </div>
+      <div class="panel-body">
+        <div class="job-list">
+          ${state.jobs.slice(0, 8).map((item) => `
+            <button class="job-row ${item.id === state.selectedJobId ? "active" : ""}" data-job-id="${escapeHtml(item.id)}">
+              <span>
+                <strong>${escapeHtml(item.kind)}</strong>
+                <span class="muted small truncate">${escapeHtml(shortId(item.id))}</span>
+              </span>
+              ${statusBadge(item.status)}
+            </button>
+          `).join("") || `<div class="empty">No jobs</div>`}
+        </div>
+        <div style="height: 12px"></div>
+        ${job ? `
+          <div class="keyvals">
+            ${kv("Current job", shortId(job.id))}
+            ${kv("Status", job.status)}
+            ${kv("Progress", `${job.progress_current}/${job.progress_total}`)}
+          </div>
+          <div style="height: 10px"></div>
+          <div class="log-view">${escapeHtml(logText || "No log entries")}</div>
+        ` : ""}
+      </div>
+    </aside>
+  `;
+}
+
+function renderModal() {
+  if (state.modal.type === "project") return renderProjectModal();
+  if (state.modal.type === "copy-project") return renderCopyProjectModal();
+  if (state.modal.type === "delete-project") return renderDeleteProjectModal();
+  if (state.modal.type === "local-import") return renderLocalImportModal();
+  if (state.modal.type === "version") return renderVersionModal();
+  if (state.modal.type === "module-job") return renderModuleJobModal();
+  if (state.modal.type === "approval") return renderApprovalModal();
+  return "";
+}
+
+function renderProjectModal() {
+  return `
+    <div class="modal-backdrop">
+      <form class="modal" id="project-form">
+        <header>
+          <h2>Create project</h2>
+          <button type="button" class="icon-button" data-action="close-modal" title="Close">${icon("x")}</button>
+        </header>
+        <div class="modal-body">
+          ${field("name", "Name", "text", "", true)}
+          ${field("slug", "Slug", "text")}
+          ${field("default_client", "Client", "text")}
+          ${field("local_path_hint", "Local path", "text")}
+          ${textareaField("description", "Description")}
+        </div>
+        <footer>
+          <button type="button" class="text-button" data-action="close-modal">Cancel</button>
+          <button class="text-button primary" type="submit">Create</button>
+        </footer>
+      </form>
+    </div>
+  `;
+}
+
+function renderCopyProjectModal() {
+  const project = currentProject();
+  if (!project) return "";
+  return `
+    <div class="modal-backdrop">
+      <form class="modal" id="copy-project-form">
+        <header>
+          <h2>Copy project</h2>
+          <button type="button" class="icon-button" data-action="close-modal" title="Close">${icon("x")}</button>
+        </header>
+        <div class="modal-body">
+          ${field("name", "Name", "text", `${project.name} copy`, true)}
+          ${field("slug", "Slug", "text")}
+          ${textareaField("description", "Description", project.description || "")}
+        </div>
+        <footer>
+          <button type="button" class="text-button" data-action="close-modal">Cancel</button>
+          <button class="text-button primary" type="submit">Copy</button>
+        </footer>
+      </form>
+    </div>
+  `;
+}
+
+function renderDeleteProjectModal() {
+  const project = currentProject();
+  if (!project) return "";
+  return `
+    <div class="modal-backdrop">
+      <form class="modal" id="delete-project-form">
+        <header>
+          <h2>Delete project</h2>
+          <button type="button" class="icon-button" data-action="close-modal" title="Close">${icon("x")}</button>
+        </header>
+        <div class="modal-body">
+          ${field("confirm_name", "Confirm name", "text", "", true)}
+        </div>
+        <footer>
+          <button type="button" class="text-button" data-action="close-modal">Cancel</button>
+          <button class="text-button danger" type="submit">Delete</button>
+        </footer>
+      </form>
+    </div>
+  `;
+}
+
+function renderLocalImportModal() {
+  const targetOptions = [
+    ["", "New project"],
+    ...state.projects.map((project) => [project.id, project.name]),
+  ];
+  return `
+    <div class="modal-backdrop">
+      <form class="modal" id="local-import-form">
+        <header>
+          <h2>Import local project</h2>
+          <button type="button" class="icon-button" data-action="close-modal" title="Close">${icon("x")}</button>
+        </header>
+        <div class="modal-body">
+          ${field("path", "Local path", "text", "", true)}
+          ${selectField("project_id", "Target", targetOptions)}
+          ${field("project_name", "Project name", "text")}
+          ${field("label", "Version label", "text", "manual import")}
+        </div>
+        <footer>
+          <button type="button" class="text-button" data-action="close-modal">Cancel</button>
+          <button class="text-button primary" type="submit">Import</button>
+        </footer>
+      </form>
+    </div>
+  `;
+}
+
+function renderVersionModal() {
+  return `
+    <div class="modal-backdrop">
+      <form class="modal" id="version-form">
+        <header>
+          <h2>Create version</h2>
+          <button type="button" class="icon-button" data-action="close-modal" title="Close">${icon("x")}</button>
+        </header>
+        <div class="modal-body">
+          ${field("label", "Label", "text")}
+          ${textareaField("manifest", "Manifest JSON", JSON.stringify({ source: "web-client" }, null, 2))}
+        </div>
+        <footer>
+          <button type="button" class="text-button" data-action="close-modal">Cancel</button>
+          <button class="text-button primary" type="submit">Create</button>
+        </footer>
+      </form>
+    </div>
+  `;
+}
+
+function renderModuleJobModal() {
+  const config = getModuleJobConfig(state.modal.kind);
+  const version = currentVersion();
+  if (!config || !version) return "";
+  return `
+    <div class="modal-backdrop">
+      <form class="modal" id="module-job-form">
+        <header>
+          <h2>${escapeHtml(config.title)}</h2>
+          <button type="button" class="icon-button" data-action="close-modal" title="Close">${icon("x")}</button>
+        </header>
+        <div class="modal-body">
+          ${selectField("schema", "Schema", MODULE_JOB_SCHEMAS, MODULE_JOB_SCHEMAS[0][0])}
+          ${field("version_label", "Result label", "text", config.defaultLabel, true)}
+          ${field("source_version", "Source version", "text", `#${version.version_number}`, false)}
+        </div>
+        <footer>
+          <button type="button" class="text-button" data-action="close-modal">Cancel</button>
+          <button class="text-button primary" type="submit">${escapeHtml(config.submitLabel)}</button>
+        </footer>
+      </form>
+    </div>
+  `;
+}
+
+function renderApprovalModal() {
+  const titles = {
+    submit: "Submit version",
+    approve: "Approve version",
+    reject: "Reject version",
+  };
+  return `
+    <div class="modal-backdrop">
+      <form class="modal" id="approval-form">
+        <header>
+          <h2>${escapeHtml(titles[state.modal.approvalAction] || "Review version")}</h2>
+          <button type="button" class="icon-button" data-action="close-modal" title="Close">${icon("x")}</button>
+        </header>
+        <div class="modal-body">
+          ${textareaField("comment", "Comment")}
+        </div>
+        <footer>
+          <button type="button" class="text-button" data-action="close-modal">Cancel</button>
+          <button class="text-button primary" type="submit">Save</button>
+        </footer>
+      </form>
+    </div>
+  `;
+}
+
+function field(name, label, type, value = "", required = false) {
+  return `
+    <div class="field">
+      <label for="${name}">${escapeHtml(label)}</label>
+      <input id="${name}" name="${name}" type="${type}" value="${escapeHtml(value)}" ${required ? "required" : ""} />
+    </div>
+  `;
+}
+
+function textareaField(name, label, value = "") {
+  return `
+    <div class="field">
+      <label for="${name}">${escapeHtml(label)}</label>
+      <textarea id="${name}" name="${name}">${escapeHtml(value)}</textarea>
+    </div>
+  `;
+}
+
+function selectField(name, label, options, value = "") {
+  return `
+    <div class="field">
+      <label for="${name}">${escapeHtml(label)}</label>
+      <select id="${name}" name="${name}">
+        ${options.map(([optionValue, optionLabel]) => `
+          <option value="${escapeHtml(optionValue)}" ${optionValue === value ? "selected" : ""}>
+            ${escapeHtml(optionLabel)}
+          </option>
+        `).join("")}
+      </select>
+    </div>
+  `;
+}
+
+function bindEvents() {
+  root.querySelectorAll("[data-action]").forEach((button) => {
+    button.addEventListener("click", onAction);
+  });
+  root.querySelectorAll("[data-project-id]").forEach((button) => {
+    button.addEventListener("click", () => selectProject(button.dataset.projectId));
+  });
+  root.querySelectorAll("[data-version-id]").forEach((button) => {
+    button.addEventListener("click", () => selectVersion(button.dataset.versionId));
+  });
+  root.querySelectorAll("[data-job-id]").forEach((button) => {
+    button.addEventListener("click", () => selectJob(button.dataset.jobId));
+  });
+  root.querySelectorAll("[data-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeTab = button.dataset.tab;
+      render();
+    });
+  });
+  root.querySelector("#language-select")?.addEventListener("change", (event) => {
+    state.language = event.target.value;
+    localStorage.setItem(LANGUAGE_KEY, state.language);
+  });
+  root.querySelector("#project-form")?.addEventListener("submit", submitProjectForm);
+  root.querySelector("#copy-project-form")?.addEventListener("submit", submitCopyProjectForm);
+  root.querySelector("#delete-project-form")?.addEventListener("submit", submitDeleteProjectForm);
+  root.querySelector("#local-import-form")?.addEventListener("submit", submitLocalImportForm);
+  root.querySelector("#version-form")?.addEventListener("submit", submitVersionForm);
+  root.querySelector("#module-job-form")?.addEventListener("submit", submitModuleJobForm);
+  root.querySelector("#approval-form")?.addEventListener("submit", submitApprovalForm);
+}
+
+async function onAction(event) {
+  const action = event.currentTarget.dataset.action;
+  if (!action || event.currentTarget.disabled) return;
+  if (action.startsWith("job:")) {
+    const kind = action.slice(4);
+    if (isModuleJob(kind)) {
+      openModal({ type: "module-job", kind });
+      return;
+    }
+    await startJob(kind);
+    return;
+  }
+  const handlers = {
+    refresh: refreshAll,
+    "refresh-jobs": refreshRecentJobs,
+    "save-api-base": saveApiBase,
+    "new-project": () => openModal({ type: "project" }),
+    "copy-project": () => openModal({ type: "copy-project" }),
+    "delete-project": () => openModal({ type: "delete-project" }),
+    "import-local": () => openModal({ type: "local-import" }),
+    "new-version": () => openModal({ type: "version" }),
+    "close-modal": closeModal,
+    "submit-version": () => openModal({ type: "approval", approvalAction: "submit" }),
+    "approve-version": () => openModal({ type: "approval", approvalAction: "approve" }),
+    "reject-version": () => openModal({ type: "approval", approvalAction: "reject" }),
+  };
+  await handlers[action]?.();
+}
+
+async function saveApiBase() {
+  const input = root.querySelector("#api-base-input");
+  setApiBase(input?.value || "");
+  notify("Connection updated");
+  await refreshAll();
+}
+
+function openModal(modal) {
+  state.modal = modal;
+  render();
+}
+
+function closeModal() {
+  state.modal = null;
+  render();
+}
+
+async function submitProjectForm(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const payload = {
+    name: data.name,
+    slug: data.slug || null,
+    description: data.description || null,
+    default_client: data.default_client || null,
+    local_path_hint: data.local_path_hint || null,
+  };
+  await runAction(async () => {
+    const project = await api.createProject(payload);
+    state.selectedProjectId = project.id;
+    localStorage.setItem(SELECTED_PROJECT_KEY, project.id);
+    state.modal = null;
+    await refreshAll();
+    notify("Project created");
+  });
+}
+
+async function submitCopyProjectForm(event) {
+  event.preventDefault();
+  const project = currentProject();
+  if (!project) return;
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const payload = {
+    name: data.name,
+    slug: data.slug || null,
+    description: data.description || null,
+  };
+  await runAction(async () => {
+    const copiedProject = await api.copyProject(project.id, payload);
+    state.selectedProjectId = copiedProject.id;
+    state.selectedVersionId = null;
+    localStorage.setItem(SELECTED_PROJECT_KEY, copiedProject.id);
+    localStorage.removeItem(SELECTED_VERSION_KEY);
+    state.modal = null;
+    await refreshAll();
+    notify("Project copied");
+  });
+}
+
+async function submitDeleteProjectForm(event) {
+  event.preventDefault();
+  const project = currentProject();
+  if (!project) return;
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  if ((data.confirm_name || "") !== project.name) {
+    notify("Project name does not match");
+    return;
+  }
+  await runAction(async () => {
+    await api.deleteProject(project.id);
+    state.selectedProjectId = null;
+    state.selectedVersionId = null;
+    state.selectedJobId = null;
+    state.files = [];
+    state.projectArtifacts = [];
+    state.versionArtifacts = [];
+    state.jobLogs = [];
+    localStorage.removeItem(SELECTED_PROJECT_KEY);
+    localStorage.removeItem(SELECTED_VERSION_KEY);
+    localStorage.removeItem(SELECTED_JOB_KEY);
+    state.modal = null;
+    await refreshAll();
+    notify("Project deleted");
+  });
+}
+
+async function submitLocalImportForm(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const payload = {
+    path: data.path,
+    project_id: data.project_id || null,
+    project_name: data.project_name || null,
+    label: data.label || "manual import",
+  };
+  await runAction(async () => {
+    const result = await api.importLocal(payload);
+    state.selectedProjectId = result.project.id;
+    state.selectedVersionId = result.version.id;
+    localStorage.setItem(SELECTED_PROJECT_KEY, result.project.id);
+    localStorage.setItem(SELECTED_VERSION_KEY, result.version.id);
+    state.modal = null;
+    await refreshAll();
+    notify("Local project imported");
+  });
+}
+
+async function submitVersionForm(event) {
+  event.preventDefault();
+  const project = currentProject();
+  if (!project) return;
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  let manifest = {};
+  try {
+    manifest = data.manifest ? JSON.parse(data.manifest) : {};
+  } catch {
+    notify("Invalid manifest JSON");
+    return;
+  }
+  await runAction(async () => {
+    const version = await api.createVersion(project.id, {
+      label: data.label || null,
+      base_version_id: state.selectedVersionId || null,
+      manifest,
+    });
+    state.selectedVersionId = version.id;
+    localStorage.setItem(SELECTED_VERSION_KEY, version.id);
+    state.modal = null;
+    await loadProject(project.id);
+    notify("Version created");
+  });
+}
+
+async function submitApprovalForm(event) {
+  event.preventDefault();
+  const version = currentVersion();
+  if (!version) return;
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  const comment = data.comment || "";
+  await runAction(async () => {
+    if (state.modal.approvalAction === "approve") await api.approveVersion(version.id, comment);
+    else if (state.modal.approvalAction === "reject") await api.rejectVersion(version.id, comment);
+    else await api.submitVersion(version.id, comment);
+    state.modal = null;
+    await loadProject(version.project_id);
+    notify("Review state updated");
+  });
+}
+
+async function submitModuleJobForm(event) {
+  event.preventDefault();
+  const kind = state.modal?.kind || "";
+  const config = getModuleJobConfig(kind);
+  if (!config) return;
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  state.modal = null;
+  render();
+  await startJob(kind, {
+    schema: data.schema || null,
+    version_label: data.version_label || config.defaultLabel,
+  });
+}
+
+async function startJob(kind, overrides = {}) {
+  const project = currentProject();
+  const version = currentVersion();
+  if (!project || !version) return;
+  const parameters = {
+    language: state.language,
+    ...overrides,
+  };
+
+  await runAction(async () => {
+    const job = await api.createJob({
+      project_id: project.id,
+      version_id: version.id,
+      kind,
+      parameters,
+      run_async: true,
+    });
+    rememberJob(job.id);
+    upsertJob(job);
+    state.selectedJobId = job.id;
+    localStorage.setItem(SELECTED_JOB_KEY, job.id);
+    state.jobLogs = [];
+    await refreshJob(job.id);
+    notify("Job queued");
+  });
+}
+
+async function selectProject(projectId) {
+  state.selectedProjectId = projectId;
+  localStorage.setItem(SELECTED_PROJECT_KEY, projectId);
+  await loadProject(projectId);
+  render();
+}
+
+async function selectVersion(versionId) {
+  state.selectedVersionId = versionId;
+  localStorage.setItem(SELECTED_VERSION_KEY, versionId);
+  await loadVersion(versionId);
+  render();
+}
+
+async function selectJob(jobId) {
+  state.selectedJobId = jobId;
+  localStorage.setItem(SELECTED_JOB_KEY, jobId);
+  state.jobLogs = [];
+  await refreshJob(jobId);
+  render();
+}
+
+async function refreshAll() {
+  await runAction(async () => {
+    state.health = await api.health();
+    state.projects = await api.listProjects();
+    if (!state.projects.some((project) => project.id === state.selectedProjectId)) {
+      state.selectedProjectId = state.projects[0]?.id || null;
+      if (state.selectedProjectId) localStorage.setItem(SELECTED_PROJECT_KEY, state.selectedProjectId);
+    }
+    if (state.selectedProjectId) await loadProject(state.selectedProjectId);
+    await refreshRecentJobs();
+  }, { silent: true });
+}
+
+async function loadProject(projectId) {
+  state.versions = await api.listVersions(projectId);
+  if (!state.versions.some((version) => version.id === state.selectedVersionId)) {
+    state.selectedVersionId = state.versions[0]?.id || null;
+    if (state.selectedVersionId) localStorage.setItem(SELECTED_VERSION_KEY, state.selectedVersionId);
+  }
+  state.projectArtifacts = await api.listProjectArtifacts(projectId);
+  if (state.selectedVersionId) await loadVersion(state.selectedVersionId);
+  else {
+    state.files = [];
+    state.versionArtifacts = [];
+  }
+}
+
+async function loadVersion(versionId) {
+  state.files = await api.listVersionFiles(versionId);
+  state.versionArtifacts = await api.listVersionArtifacts(versionId);
+}
+
+async function refreshRecentJobs() {
+  const ids = loadRecentJobs();
+  const jobs = [];
+  for (const id of ids) {
+    try {
+      jobs.push(await api.getJob(id));
+    } catch {
+      // Old jobs may have been removed with a local database reset.
+    }
+  }
+  state.jobs = jobs;
+  if (!state.jobs.some((job) => job.id === state.selectedJobId)) {
+    state.selectedJobId = state.jobs[0]?.id || null;
+    if (state.selectedJobId) localStorage.setItem(SELECTED_JOB_KEY, state.selectedJobId);
+  }
+  if (state.selectedJobId) await refreshJob(state.selectedJobId);
+  render();
+}
+
+async function refreshJob(jobId) {
+  const job = await api.getJob(jobId);
+  upsertJob(job);
+  const logs = await api.getJobLogs(jobId);
+  state.jobLogs = logs.items || [];
+  if (["succeeded", "failed", "canceled"].includes(job.status) && state.selectedProjectId === job.project_id) {
+    const previousVersionId = state.selectedVersionId;
+    await loadProject(job.project_id);
+    const producedVersionId = job.parameters?.produced_version_id || null;
+    if (producedVersionId && producedVersionId !== previousVersionId) {
+      const producedVersion = state.versions.find((version) => version.id === producedVersionId);
+      if (producedVersion) {
+        state.selectedVersionId = producedVersion.id;
+        localStorage.setItem(SELECTED_VERSION_KEY, producedVersion.id);
+        await loadVersion(producedVersion.id);
+        notify(`Created version #${producedVersion.version_number}`);
+      }
+    }
+  }
+}
+
+function upsertJob(job) {
+  const index = state.jobs.findIndex((item) => item.id === job.id);
+  if (index >= 0) state.jobs[index] = job;
+  else state.jobs.unshift(job);
+}
+
+function rememberJob(jobId) {
+  const ids = loadRecentJobs().filter((id) => id !== jobId);
+  ids.unshift(jobId);
+  localStorage.setItem(RECENT_JOBS_KEY, JSON.stringify(ids.slice(0, 24)));
+}
+
+function loadRecentJobs() {
+  try {
+    const value = JSON.parse(localStorage.getItem(RECENT_JOBS_KEY) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+async function runAction(fn, options = {}) {
+  state.busy = true;
+  render();
+  try {
+    await fn();
+  } catch (error) {
+    notify(error.message || "Action failed");
+  } finally {
+    state.busy = false;
+    if (!options.skipRender) render();
+  }
+}
+
+function notify(message) {
+  state.toast = message;
+  render();
+  window.clearTimeout(notify.timeout);
+  notify.timeout = window.setTimeout(() => {
+    state.toast = null;
+    render();
+  }, 3200);
+}
+
+window.setInterval(async () => {
+  const job = currentJob();
+  if (!job || !["queued", "running", "cancel_requested"].includes(job.status)) return;
+  try {
+    await refreshJob(job.id);
+    render();
+  } catch {
+    // Keep polling quiet; explicit refresh will surface connection errors.
+  }
+}, 2500);
+
+render();
+refreshAll();

@@ -1,0 +1,13 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+P4_web/.env
+P4_web/venv/
+P4_web/var/
+
+P4_legacy_runner/.pytest_cache/
+
+*.log

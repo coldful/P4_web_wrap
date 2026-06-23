@@ -17,6 +17,7 @@ SESSION_ID="p4-stack-$$-$(date +%s)"
 BACKEND_PID=""
 FRONTEND_PID=""
 STARTED_ANY=0
+BACKEND_UVICORN=()
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -30,6 +31,32 @@ require_file() {
     echo "Missing required path: $1" >&2
     exit 1
   fi
+}
+
+resolve_backend_uvicorn() {
+  local candidate=""
+
+  for candidate in \
+    "$BACKEND_DIR/venv/bin/uvicorn" \
+    "$BACKEND_DIR/.venv/bin/uvicorn"
+  do
+    if [ -x "$candidate" ]; then
+      BACKEND_UVICORN=("$candidate")
+      return 0
+    fi
+  done
+
+  candidate="$(command -v uvicorn || true)"
+  if [ -n "$candidate" ]; then
+    BACKEND_UVICORN=("$candidate")
+    return 0
+  fi
+
+  echo "Missing uvicorn. Checked:" >&2
+  echo "  - $BACKEND_DIR/venv/bin/uvicorn" >&2
+  echo "  - $BACKEND_DIR/.venv/bin/uvicorn" >&2
+  echo "  - uvicorn in PATH" >&2
+  exit 1
 }
 
 port_in_use() {
@@ -78,7 +105,7 @@ trap cleanup EXIT INT TERM
 
 require_command docker
 require_command python3
-require_file "$BACKEND_DIR/venv/bin/uvicorn"
+resolve_backend_uvicorn
 require_file "$LEGACY_DIR/Dockerfile"
 require_file "$LEGACY_APP_DIR/interface.py"
 require_file "$FRONTEND_DIR/index.html"
@@ -102,7 +129,7 @@ if [ "$BACKEND_PORT_STATE" = "free" ]; then
     P4_WEB_ENABLE_LEGACY_RUNNER=true \
     P4_WEB_LEGACY_P4_APP_PATH="$LEGACY_APP_DIR" \
     P4_WEB_LEGACY_RUNNER_COMMAND="$LEGACY_RUNNER_COMMAND" \
-    ./venv/bin/uvicorn p4_web.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT"
+    "${BACKEND_UVICORN[@]}" p4_web.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT"
   ) &
   BACKEND_PID=$!
   STARTED_ANY=1

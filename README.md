@@ -30,17 +30,31 @@ wp4/
 └── P4_web_wrap-main/
 ```
 
+## Подготовка окружения для `run_p4_stack.sh`
+
+Из корня `P4_web_wrap-main`:
+
+```bash
+chmod +x ./prepare_p4_stack.sh ./run_p4_stack.sh
+./prepare_p4_stack.sh
+```
+
+`prepare_p4_stack.sh`:
+
+- создаёт `P4_web/venv`
+- ставит Python-зависимости из `requirements.txt`
+- создаёт `P4_web/.env` из шаблона, если файла ещё нет
+- инициализирует SQLite-базу через `p4web init-db`
+- проверяет, что рядом доступен `P4_app` и работает Docker
+
+После этого wrapper готов к запуску через `run_p4_stack.sh`.
+
 ## Быстрый запуск полного стека
 
 Из корня `P4_web_wrap-main`:
 
 ```bash
-python3 -m venv P4_web/venv
-P4_web/venv/bin/pip install -r requirements.txt
-cp P4_web/.env.example P4_web/.env
-cd P4_web
-./venv/bin/p4web init-db
-cd ..
+./prepare_p4_stack.sh
 ./run_p4_stack.sh
 ```
 
@@ -108,7 +122,7 @@ P4_STACK_LEGACY_APP_DIR=/abs/path/to/P4_app ./run_p4_stack.sh
 ### `Missing uvicorn`
 
 Не создано виртуальное окружение или не установлены Python-зависимости.
-Повтори шаги из раздела "Быстрый запуск полного стека".
+Запусти `./prepare_p4_stack.sh`.
 
 ### Порт `8000` или `5173` уже занят
 

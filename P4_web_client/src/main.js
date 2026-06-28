@@ -1,13 +1,19 @@
-import { api, getApiBase, setApiBase } from "./api.js";
-import { icon } from "./icons.js";
-import { getModuleJobConfig, isModuleJob, MODULE_JOB_SCHEMAS } from "./job-config.js";
+import { api, getApiBase, setApiBase } from "./api.js?v=20260628-preview3";
+import { icon } from "./icons.js?v=20260628-preview3";
+import {
+  getFileJobConfig,
+  getModuleJobConfig,
+  isFileJob,
+  isModuleJob,
+  MODULE_JOB_SCHEMAS,
+} from "./job-config.js?v=20260628-preview3";
 import {
   escapeHtml,
   formatBytes,
   formatDate,
   shortId,
   statusBadge,
-} from "./utils.js";
+} from "./utils.js?v=20260628-preview3";
 
 const RECENT_JOBS_KEY = "p4web.client.recentJobs";
 const SELECTED_PROJECT_KEY = "p4web.client.selectedProjectId";
@@ -46,6 +52,10 @@ function currentVersion() {
 
 function currentJob() {
   return state.jobs.find((job) => job.id === state.selectedJobId) || null;
+}
+
+function currentArtifacts() {
+  return state.versionArtifacts.length ? state.versionArtifacts : state.projectArtifacts;
 }
 
 function isRunnable() {
@@ -341,18 +351,22 @@ function renderFiles() {
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Path</th><th>Role</th><th>Size</th><th>SHA256</th><th>Storage</th></tr>
+          <tr><th>Path</th><th>Role</th><th>Size</th><th>SHA256</th><th>Storage</th><th></th></tr>
         </thead>
         <tbody>
           ${state.files.map((file) => `
             <tr>
-              <td class="truncate">${escapeHtml(file.path)}</td>
+              <td class="truncate">${renderStoredObjectName(file.path, isPreviewSupported(file), "preview-file", file.id)}</td>
               <td>${escapeHtml(file.role)}</td>
               <td>${formatBytes(file.size_bytes)}</td>
               <td><span class="muted small">${escapeHtml(file.sha256)}</span></td>
               <td><span class="muted small truncate">${escapeHtml(file.storage_key)}</span></td>
+              <td class="row-actions">
+                ${isPreviewSupported(file) ? `<button class="text-button" data-action="preview-file" data-file-id="${escapeHtml(file.id)}">Open</button>` : ""}
+                <button class="text-button" data-action="download-file" data-file-id="${escapeHtml(file.id)}">${icon("download")} Download</button>
+              </td>
             </tr>
-          `).join("") || `<tr><td colspan="5" class="muted">No files</td></tr>`}
+          `).join("") || `<tr><td colspan="6" class="muted">No files</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -360,23 +374,27 @@ function renderFiles() {
 }
 
 function renderArtifacts() {
-  const artifacts = state.versionArtifacts.length ? state.versionArtifacts : state.projectArtifacts;
+  const artifacts = currentArtifacts();
   return `
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Kind</th><th>Path</th><th>Size</th><th>Created</th><th>Storage</th></tr>
+          <tr><th>Kind</th><th>Path</th><th>Size</th><th>Created</th><th>Storage</th><th></th></tr>
         </thead>
         <tbody>
           ${artifacts.map((artifact) => `
             <tr>
               <td>${escapeHtml(artifact.kind)}</td>
-              <td class="truncate">${escapeHtml(artifact.path)}</td>
+              <td class="truncate">${renderStoredObjectName(artifact.path, isPreviewSupported(artifact), "preview-artifact", artifact.id)}</td>
               <td>${formatBytes(artifact.size_bytes)}</td>
               <td>${escapeHtml(formatDate(artifact.created_at))}</td>
               <td><span class="muted small truncate">${escapeHtml(artifact.storage_key)}</span></td>
+              <td class="row-actions">
+                ${isPreviewSupported(artifact) ? `<button class="text-button" data-action="preview-artifact" data-artifact-id="${escapeHtml(artifact.id)}">Open</button>` : ""}
+                <button class="text-button" data-action="download-artifact" data-artifact-id="${escapeHtml(artifact.id)}">${icon("download")} Download</button>
+              </td>
             </tr>
-          `).join("") || `<tr><td colspan="5" class="muted">No artifacts</td></tr>`}
+          `).join("") || `<tr><td colspan="6" class="muted">No artifacts</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -456,8 +474,141 @@ function renderModal() {
   if (state.modal.type === "local-import") return renderLocalImportModal();
   if (state.modal.type === "version") return renderVersionModal();
   if (state.modal.type === "module-job") return renderModuleJobModal();
+  if (state.modal.type === "file-job") return renderFileJobModal();
   if (state.modal.type === "approval") return renderApprovalModal();
+  if (state.modal.type === "preview") return renderPreviewModal();
   return "";
+}
+
+function renderPreviewModal() {
+  const modal = state.modal;
+  if (!modal || modal.type !== "preview") return "";
+  return `
+    <div class="modal-backdrop">
+      <section class="modal preview-modal" style="width: min(96vw, 1680px); height: min(94vh, 1120px);">
+        <header class="preview-header">
+          <button type="button" class="text-button" data-action="close-modal">${icon("back")} Back</button>
+          <div class="preview-title">
+            <h2>${escapeHtml(modal.title)}</h2>
+            <span class="muted small">${escapeHtml(modal.subtitle || "")}</span>
+          </div>
+          <button type="button" class="text-button" data-action="${escapeHtml(modal.downloadAction)}" ${modal.downloadIdAttr}>
+            ${icon("download")} Download
+          </button>
+        </header>
+        <div class="preview-body">
+          ${renderPreviewBody(modal)}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderPreviewBody(modal) {
+  if (modal.loading) {
+    return `<div class="empty">Loading preview...</div>`;
+  }
+  if (modal.error) {
+    return `<div class="empty">${escapeHtml(modal.error)}</div>`;
+  }
+  if (modal.previewKind === "text") {
+    return `<pre class="preview-text">${escapeHtml(modal.textContent || "")}</pre>`;
+  }
+  if (modal.previewKind === "image") {
+    return `
+      <div class="preview-image-wrap">
+        <img class="preview-image" src="${escapeHtml(modal.sourceUrl)}" alt="${escapeHtml(modal.title)}" />
+      </div>
+    `;
+  }
+  if (modal.previewKind === "pdf") {
+    return `<iframe class="preview-frame" src="${escapeHtml(modal.sourceUrl)}" title="${escapeHtml(modal.title)}"></iframe>`;
+  }
+  return `<div class="empty">Preview is not available for this file.</div>`;
+}
+
+function renderStoredObjectName(path, previewable, action, id) {
+  if (!previewable) return escapeHtml(path);
+  const idAttr = action === "preview-file"
+    ? `data-file-id="${escapeHtml(id)}"`
+    : `data-artifact-id="${escapeHtml(id)}"`;
+  return `<button class="link-button truncate" data-action="${escapeHtml(action)}" ${idAttr}>${escapeHtml(path)}</button>`;
+}
+
+function previewKindFor(item) {
+  const path = String(item?.path || "").toLowerCase();
+  const contentType = String(item?.content_type || "").toLowerCase();
+  if (contentType.includes("pdf") || path.endsWith(".pdf")) return "pdf";
+  if (
+    contentType.startsWith("image/") ||
+    [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp"].some((suffix) => path.endsWith(suffix))
+  ) {
+    return "image";
+  }
+  if (
+    contentType.startsWith("text/") ||
+    contentType.includes("xml") ||
+    [".txt", ".xml", ".log", ".fo"].some((suffix) => path.endsWith(suffix))
+  ) {
+    return "text";
+  }
+  return null;
+}
+
+function isPreviewSupported(item) {
+  return Boolean(previewKindFor(item));
+}
+
+function versionFileContentUrl(versionId, fileId) {
+  return `${getApiBase()}/versions/${versionId}/files/${fileId}/content`;
+}
+
+function versionFileDownloadUrl(versionId, fileId) {
+  return `${getApiBase()}/versions/${versionId}/files/${fileId}/download`;
+}
+
+function artifactContentUrl(artifactId) {
+  return `${getApiBase()}/artifacts/${artifactId}/content`;
+}
+
+function artifactDownloadUrl(artifactId) {
+  return `${getApiBase()}/artifacts/${artifactId}/download`;
+}
+
+async function fetchPreviewText(url) {
+  const response = await fetch(url, {
+    headers: { Accept: "text/plain, application/xml, text/xml;q=0.9,*/*;q=0.8" },
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response));
+  }
+  return await response.text();
+}
+
+async function downloadStoredObject(url, filename) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response));
+  }
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename || "download";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+async function responseErrorMessage(response) {
+  const text = await response.text();
+  try {
+    const data = text ? JSON.parse(text) : null;
+    return data?.detail || response.statusText || "Request failed";
+  } catch {
+    return text || response.statusText || "Request failed";
+  }
 }
 
 function renderProjectModal() {
@@ -603,6 +754,37 @@ function renderModuleJobModal() {
   `;
 }
 
+function renderFileJobModal() {
+  const config = getFileJobConfig(state.modal.kind);
+  if (!config) return "";
+  const fields = [];
+  if (state.modal.kind === "convert_sap_to_bit_xml") {
+    fields.push(field("etk_file", "ETK XML path", "text", "", true));
+    fields.push(field("output_file", "Output XML path", "text"));
+  }
+  if (state.modal.kind === "convert_opmanual_to_bit_xml") {
+    fields.push(textareaField("opmanual_files", "Opmanual XML paths"));
+  }
+  return `
+    <div class="modal-backdrop">
+      <form class="modal" id="file-job-form">
+        <header>
+          <h2>${escapeHtml(config.title)}</h2>
+          <button type="button" class="icon-button" data-action="close-modal" title="Close">${icon("x")}</button>
+        </header>
+        <div class="modal-body">
+          <p class="muted small">${escapeHtml(config.description || "")}</p>
+          ${fields.join("")}
+        </div>
+        <footer>
+          <button type="button" class="text-button" data-action="close-modal">Cancel</button>
+          <button class="text-button primary" type="submit">${escapeHtml(config.submitLabel)}</button>
+        </footer>
+      </form>
+    </div>
+  `;
+}
+
 function renderApprovalModal() {
   const titles = {
     submit: "Submit version",
@@ -690,16 +872,23 @@ function bindEvents() {
   root.querySelector("#local-import-form")?.addEventListener("submit", submitLocalImportForm);
   root.querySelector("#version-form")?.addEventListener("submit", submitVersionForm);
   root.querySelector("#module-job-form")?.addEventListener("submit", submitModuleJobForm);
+  root.querySelector("#file-job-form")?.addEventListener("submit", submitFileJobForm);
   root.querySelector("#approval-form")?.addEventListener("submit", submitApprovalForm);
 }
 
 async function onAction(event) {
   const action = event.currentTarget.dataset.action;
+  const fileId = event.currentTarget.dataset.fileId;
+  const artifactId = event.currentTarget.dataset.artifactId;
   if (!action || event.currentTarget.disabled) return;
   if (action.startsWith("job:")) {
     const kind = action.slice(4);
     if (isModuleJob(kind)) {
       openModal({ type: "module-job", kind });
+      return;
+    }
+    if (isFileJob(kind)) {
+      openModal({ type: "file-job", kind });
       return;
     }
     await startJob(kind);
@@ -715,6 +904,10 @@ async function onAction(event) {
     "import-local": () => openModal({ type: "local-import" }),
     "new-version": () => openModal({ type: "version" }),
     "close-modal": closeModal,
+    "preview-file": () => openFilePreview(fileId),
+    "download-file": () => downloadFile(fileId),
+    "preview-artifact": () => openArtifactPreview(artifactId),
+    "download-artifact": () => downloadArtifact(artifactId),
     "submit-version": () => openModal({ type: "approval", approvalAction: "submit" }),
     "approve-version": () => openModal({ type: "approval", approvalAction: "approve" }),
     "reject-version": () => openModal({ type: "approval", approvalAction: "reject" }),
@@ -737,6 +930,79 @@ function openModal(modal) {
 function closeModal() {
   state.modal = null;
   render();
+}
+
+async function openFilePreview(fileId) {
+  const version = currentVersion();
+  const file = state.files.find((item) => item.id === fileId);
+  if (!version || !file) return;
+  await openStoredObjectPreview({
+    item: file,
+    contentUrl: versionFileContentUrl(version.id, file.id),
+    downloadAction: "download-file",
+    downloadIdAttr: `data-file-id="${escapeHtml(file.id)}"`,
+  });
+}
+
+async function openArtifactPreview(artifactId) {
+  const artifact = currentArtifacts().find((item) => item.id === artifactId);
+  if (!artifact) return;
+  await openStoredObjectPreview({
+    item: artifact,
+    contentUrl: artifactContentUrl(artifact.id),
+    downloadAction: "download-artifact",
+    downloadIdAttr: `data-artifact-id="${escapeHtml(artifact.id)}"`,
+  });
+}
+
+async function openStoredObjectPreview({ item, contentUrl, downloadAction, downloadIdAttr }) {
+  const previewKind = previewKindFor(item);
+  if (!previewKind) {
+    notify("Preview is not available for this file type");
+    return;
+  }
+  const modal = {
+    type: "preview",
+    title: item.path,
+    subtitle: item.content_type || item.kind || "",
+    previewKind,
+    sourceUrl: previewKind === "text" ? "" : contentUrl,
+    textContent: "",
+    loading: previewKind === "text",
+    error: "",
+    downloadAction,
+    downloadIdAttr,
+  };
+  state.modal = modal;
+  render();
+  if (previewKind !== "text") return;
+  try {
+    const text = await fetchPreviewText(contentUrl);
+    if (state.modal !== modal) return;
+    state.modal = { ...modal, loading: false, textContent: text };
+    render();
+  } catch (error) {
+    if (state.modal !== modal) return;
+    state.modal = { ...modal, loading: false, error: error.message || "Preview failed" };
+    render();
+  }
+}
+
+async function downloadFile(fileId) {
+  const version = currentVersion();
+  const file = state.files.find((item) => item.id === fileId);
+  if (!version || !file) return;
+  await runAction(async () => {
+    await downloadStoredObject(versionFileDownloadUrl(version.id, file.id), file.path.split("/").pop());
+  }, { skipRender: true });
+}
+
+async function downloadArtifact(artifactId) {
+  const artifact = currentArtifacts().find((item) => item.id === artifactId);
+  if (!artifact) return;
+  await runAction(async () => {
+    await downloadStoredObject(artifactDownloadUrl(artifact.id), artifact.path.split("/").pop());
+  }, { skipRender: true });
 }
 
 async function submitProjectForm(event) {
@@ -883,6 +1149,37 @@ async function submitModuleJobForm(event) {
     schema: data.schema || null,
     version_label: data.version_label || config.defaultLabel,
   });
+}
+
+async function submitFileJobForm(event) {
+  event.preventDefault();
+  const kind = state.modal?.kind || "";
+  const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+  if (kind === "convert_sap_to_bit_xml") {
+    state.modal = null;
+    render();
+    await startJob(kind, {
+      etk_file: data.etk_file || null,
+      output_file: data.output_file || null,
+    });
+    return;
+  }
+  if (kind === "convert_opmanual_to_bit_xml") {
+    const opmanualFiles = String(data.opmanual_files || "")
+      .replaceAll(",", "\n")
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (!opmanualFiles.length) {
+      notify("Enter at least one opmanual XML path");
+      return;
+    }
+    state.modal = null;
+    render();
+    await startJob(kind, {
+      opmanual_files: opmanualFiles,
+    });
+  }
 }
 
 async function startJob(kind, overrides = {}) {

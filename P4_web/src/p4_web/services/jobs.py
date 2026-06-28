@@ -23,6 +23,8 @@ from p4_web.storage import StorageBackend
 VERSION_PRODUCING_JOB_KINDS = {
     JobKind.PACK_MODULES,
     JobKind.UNPACK_MODULES,
+    JobKind.GENERATE_LISTS,
+    JobKind.CHECK_INDEX,
 }
 
 
@@ -116,6 +118,7 @@ async def run_job(
             )
             parameters = dict(job.parameters)
             parameters["project_path"] = str(project_path)
+            _inject_default_runner_parameters(job.kind, parameters, project_path)
             context = RunnerContext(
                 job_id=job.id,
                 project_id=job.project_id,
@@ -247,3 +250,12 @@ def _manifest_root_name(version: ProjectVersion, project_path: Path) -> str:
     if isinstance(root_name, str) and root_name.strip():
         return root_name
     return project_path.name
+
+
+def _inject_default_runner_parameters(
+    kind: JobKind,
+    parameters: dict[str, object],
+    project_path: Path,
+) -> None:
+    if kind == JobKind.XSL_FO and not parameters.get("output_dir"):
+        parameters["output_dir"] = str(project_path)

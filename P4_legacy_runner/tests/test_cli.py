@@ -100,6 +100,32 @@ def test_run_web_job_maps_generate_pdf_to_cli_command() -> None:
     ]
 
 
+def test_run_web_job_remaps_project_relative_helper_paths_to_container_workspace() -> None:
+    args = cli.parse_args(
+        [
+            "run-web-job",
+            "--operation",
+            "xsl_fo",
+            "--project-path",
+            "/work/project",
+            "--parameters-json",
+            '{"project_path":"var/workspaces/job-1/project","xml_file":"docs/source.xml","output_dir":"var/workspaces/job-1/project"}',
+        ]
+    )
+
+    assert cli.build_web_job_argv(args) == [
+        "xsl-fo",
+        "--project-path",
+        "/work/project",
+        "--language",
+        "de",
+        "--xml-file",
+        "/work/project/docs/source.xml",
+        "--output-dir",
+        "/work/project",
+    ]
+
+
 def test_generate_lists_builds_helper_command() -> None:
     command = build(
         ["generate-lists", "--project-path", "/work/project", "--xml-file", "/work/project/a.xml"]
@@ -111,10 +137,95 @@ def test_generate_lists_builds_helper_command() -> None:
     assert "--xml-file" in command
 
 
+def test_run_web_job_maps_opmanual_files_to_cli_command() -> None:
+    args = cli.parse_args(
+        [
+            "run-web-job",
+            "--operation",
+            "convert_opmanual_to_bit_xml",
+            "--project-path",
+            "/work/project",
+            "--parameters-json",
+            '{"opmanual_files":["docs/s_01.01_intro.xml","docs/s_02.00_main.xml"]}',
+        ]
+    )
+
+    assert cli.build_web_job_argv(args) == [
+        "opmanual-to-bit-xml",
+        "--project-path",
+        "/work/project",
+        "--language",
+        "de",
+        "/work/project/docs/s_01.01_intro.xml",
+        "/work/project/docs/s_02.00_main.xml",
+    ]
+
+
+def test_run_web_job_maps_convert_sap_paths_to_container_workspace() -> None:
+    args = cli.parse_args(
+        [
+            "run-web-job",
+            "--operation",
+            "convert_sap_to_bit_xml",
+            "--project-path",
+            "/work/project",
+            "--parameters-json",
+            '{"etk_file":"imports/source.xml","output_file":"exports/result.xml"}',
+        ]
+    )
+
+    assert cli.build_web_job_argv(args) == [
+        "convert-sap-to-bit-xml",
+        "--project-path",
+        "/work/project",
+        "--language",
+        "de",
+        "--etk-file",
+        "/work/project/imports/source.xml",
+        "--output-file",
+        "/work/project/exports/result.xml",
+    ]
+
+
 def test_set_var_accepts_assignment() -> None:
     command = build(["set-var", "--project-path", "/work/project", "stage=review"])
 
     assert command[-2:] == ["--setvar", "stage=review"]
+
+
+def test_opmanual_command_accepts_project_arguments() -> None:
+    command = build(
+        [
+            "opmanual-to-bit-xml",
+            "--project-path",
+            "/work/project",
+            "--language",
+            "de",
+            "docs/s_01.01_intro.xml",
+        ]
+    )
+
+    assert "--project-path" in command
+    assert "--language" in command
+    assert "--opmanual-file" in command
+
+
+def test_convert_sap_command_accepts_project_arguments() -> None:
+    command = build(
+        [
+            "convert-sap-to-bit-xml",
+            "--project-path",
+            "/work/project",
+            "--language",
+            "de",
+            "--etk-file",
+            "/work/project/imports/source.xml",
+        ]
+    )
+
+    assert "--project-path" in command
+    assert "--language" in command
+    assert "--etk-file" in command
 
 
 def test_default_p4_app_path_points_to_repo_sibling() -> None:

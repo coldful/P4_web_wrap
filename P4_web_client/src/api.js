@@ -19,9 +19,12 @@ export function setApiBase(value) {
   localStorage.setItem(STORAGE_KEY, clean || DEFAULT_API_BASE);
 }
 
+export function buildApiUrl(path) {
+  return `${getApiBase()}${path}`;
+}
+
 export async function request(path, options = {}) {
-  const base = getApiBase();
-  const response = await fetch(`${base}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {}),
@@ -36,6 +39,35 @@ export async function request(path, options = {}) {
     throw new ApiError(message, response.status, data);
   }
   return data;
+}
+
+async function rawRequest(url, options = {}) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    const text = await response.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    const message = data?.detail || response.statusText || "API request failed";
+    throw new ApiError(message, response.status, data);
+  }
+  return response;
+}
+
+async function downloadFromUrl(url, filename) {
+  const response = await rawRequest(url);
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename || "download";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 export const api = {
@@ -83,6 +115,21 @@ export const api = {
 
   listProjectArtifacts: (projectId) => request(`/projects/${projectId}/artifacts`),
   listVersionArtifacts: (versionId) => request(`/versions/${versionId}/artifacts`),
+  versionFileContentUrl: (versionId, fileId) =>
+    buildApiUrl(`/versions/${versionId}/files/${fileId}/content`),
+  versionFileDownloadUrl: (versionId, fileId) =>
+    buildApiUrl(`/versions/${versionId}/files/${fileId}/download`),
+  artifactContentUrl: (artifactId) => buildApiUrl(`/artifacts/${artifactId}/content`),
+  artifactDownloadUrl: (artifactId) => buildApiUrl(`/artifacts/${artifactId}/download`),
+  fetchTextFromUrl: async (url) => {
+    const response = await rawRequest(url, {
+      headers: { Accept: "text/plain, application/xml, text/xml;q=0.9,*/*;q=0.8" },
+    });
+    return await response.text();
+  },
+  downloadFromUrl,
+  downloadUrl: downloadFromUrl,
+  downloadURL: downloadFromUrl,
 
   submitVersion: (versionId, comment = "") =>
     request(`/versions/${versionId}/submit`, {

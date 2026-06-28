@@ -20,10 +20,31 @@ const MODULE_JOB_CONFIG = {
   },
 };
 
+const FILE_JOB_CONFIG = {
+  convert_sap_to_bit_xml: {
+    title: "ETK SAP to bitplant XML",
+    submitLabel: "Convert",
+    description: "Use paths relative to the imported version snapshot.",
+  },
+  convert_opmanual_to_bit_xml: {
+    title: "Opmanual to bitplant XML",
+    submitLabel: "Convert",
+    description: "Enter one opmanual XML path per line, relative to the imported version snapshot.",
+  },
+};
+
 export function getModuleJobConfig(kind) {
   return MODULE_JOB_CONFIG[kind] || null;
 }
 
 export function isModuleJob(kind) {
   return Boolean(getModuleJobConfig(kind));
+}
+
+export function getFileJobConfig(kind) {
+  return FILE_JOB_CONFIG[kind] || null;
+}
+
+export function isFileJob(kind) {
+  return Boolean(getFileJobConfig(kind));
 }

@@ -34,6 +34,10 @@ body,
   margin: 0;
 }
 
+body {
+  overflow-x: hidden;
+}
+
 button,
 input,
 select,
@@ -228,9 +232,11 @@ button {
 .workspace {
   min-height: 0;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) minmax(300px, 340px);
+  align-items: start;
   gap: 12px;
   padding: 12px 14px 14px;
+  overflow-x: hidden;
 }
 
 .panel {
@@ -262,6 +268,7 @@ button {
 }
 
 .panel-body {
+  min-width: 0;
   min-height: 0;
   padding: 12px;
 }
@@ -324,7 +331,7 @@ button {
 
 .main-panel {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
 }
 
 .project-title {
@@ -393,13 +400,19 @@ button {
 }
 
 .tab-panel {
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   padding: 12px;
   background: var(--panel-alt);
 }
 
+.tab-panel > * {
+  min-width: 0;
+}
+
 .table-wrap {
+  max-width: 100%;
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -447,6 +460,9 @@ tr:last-child td {
   padding: 6px 10px;
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .text-button.primary {
@@ -467,6 +483,20 @@ tr:last-child td {
 
 .text-button.danger:hover {
   border-color: #8f1b12;
+}
+
+.link-button {
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: var(--teal);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.link-button:hover {
+  text-decoration: underline;
 }
 
 .badge {
@@ -503,6 +533,7 @@ tr:last-child td {
 .split-two {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  align-items: start;
   gap: 12px;
 }
 
@@ -519,6 +550,10 @@ tr:last-child td {
   border-bottom: 1px solid var(--line);
 }
 
+.kv > * {
+  min-width: 0;
+}
+
 .kv:last-child {
   border-bottom: none;
 }
@@ -526,6 +561,12 @@ tr:last-child td {
 .job-panel {
   display: grid;
   grid-template-rows: auto 1fr;
+  width: 100%;
+  max-width: 100%;
+}
+
+.job-panel .panel-body {
+  overflow: hidden;
 }
 
 .job-list {
@@ -545,6 +586,10 @@ tr:last-child td {
   text-align: left;
 }
 
+.job-row > * {
+  min-width: 0;
+}
+
 .job-row.active,
 .job-row:hover {
   border-color: var(--blue);
@@ -553,6 +598,7 @@ tr:last-child td {
 
 .log-view {
   height: 320px;
+  max-width: 100%;
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -563,6 +609,8 @@ tr:last-child td {
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .empty {
@@ -596,7 +644,7 @@ tr:last-child td {
   display: grid;
   place-items: center;
   background: rgba(16, 24, 32, 0.42);
-  padding: 18px;
+  padding: 10px;
   z-index: 30;
 }
 
@@ -635,6 +683,88 @@ tr:last-child td {
   display: grid;
   gap: 12px;
   padding: 14px;
+}
+
+.preview-modal {
+  width: min(96vw, 1680px);
+  height: min(94vh, 1120px);
+  max-height: calc(100vh - 20px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.preview-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.preview-title {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.preview-title h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.preview-body {
+  min-height: 0;
+  padding: 10px;
+  background: #f5f8fb;
+  overflow: auto;
+}
+
+.preview-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.preview-text {
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 16px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview-image-wrap {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(45deg, #eef3f8 25%, transparent 25%),
+    linear-gradient(-45deg, #eef3f8 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #eef3f8 75%),
+    linear-gradient(-45deg, transparent 75%, #eef3f8 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  padding: 18px;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: var(--shadow);
 }
 
 .field {
@@ -683,6 +813,15 @@ tr:last-child td {
 
   .split-two {
     grid-template-columns: 1fr;
+  }
+
+  .preview-modal {
+    height: min(92vh, 860px);
+  }
+
+  .preview-header {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 }
 

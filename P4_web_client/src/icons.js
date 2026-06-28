@@ -24,6 +24,8 @@ const paths = {
   database: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
   copy: '<rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 16H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/>',
+  download: '<path d="M12 3v11"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>',
+  back: '<path d="m15 18-6-6 6-6"/><path d="M21 12H9"/>',
 };
 
 export function icon(name) {

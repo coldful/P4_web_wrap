@@ -261,9 +261,41 @@ def _append_bool_flag(argv, name, value):
         argv.append(name)
 
 
+def _relative_to_root(path_text, root_text):
+    if not path_text or not root_text:
+        return None
+    if os.path.isabs(path_text) != os.path.isabs(root_text):
+        return None
+    relative = os.path.relpath(os.path.normpath(path_text), os.path.normpath(root_text))
+    if relative == ".":
+        return ""
+    if relative == os.pardir or relative.startswith(os.pardir + os.sep):
+        return None
+    return relative
+
+
+def _remap_web_job_path(value, parameters_project_path, runtime_project_path):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    runtime_root = str(runtime_project_path or "").strip()
+    if not runtime_root:
+        return text
+    parameters_root = str(parameters_project_path or "").strip()
+    relative = _relative_to_root(text, parameters_root)
+    if relative is not None:
+        return runtime_root if not relative else os.path.join(runtime_root, relative)
+    if os.path.isabs(text):
+        return text
+    return os.path.join(runtime_root, text)
+
+
 def build_web_job_argv(args):
     parameters = load_web_job_parameters(args)
     command_name = resolve_web_command_name(args.operation)
+    parameters_project_path = parameters.get("project_path")
 
     argv = []
     if args.p4_app_path:
@@ -296,11 +328,46 @@ def build_web_job_argv(args):
     if command_name in ("pack-modules", "unpack-modules"):
         _append_arg(argv, "--schema", parameters.get("schema"))
     if command_name in ("generate-lists", "check-index", "xsl-fo"):
-        _append_arg(argv, "--xml-file", parameters.get("xml_file"))
-        _append_arg(argv, "--output-dir", parameters.get("output_dir"))
+        _append_arg(
+            argv,
+            "--xml-file",
+            _remap_web_job_path(parameters.get("xml_file"), parameters_project_path, args.project_path),
+        )
+        _append_arg(
+            argv,
+            "--output-dir",
+            _remap_web_job_path(
+                parameters.get("output_dir"),
+                parameters_project_path,
+                args.project_path,
+            ),
+        )
     if command_name == "convert-sap-to-bit-xml":
-        _append_arg(argv, "--etk-file", parameters.get("etk_file"))
-        _append_arg(argv, "--output-file", parameters.get("output_file"))
+        _append_arg(
+            argv,
+            "--etk-file",
+            _remap_web_job_path(parameters.get("etk_file"), parameters_project_path, args.project_path),
+        )
+        _append_arg(
+            argv,
+            "--output-file",
+            _remap_web_job_path(
+                parameters.get("output_file"),
+                parameters_project_path,
+                args.project_path,
+            ),
+        )
+    if command_name == "opmanual-to-bit-xml":
+        files = parameters.get("opmanual_files") or []
+        if isinstance(files, (str, bytes)):
+            files = [files]
+        for path in files:
+            text = _remap_web_job_path(path, parameters_project_path, args.project_path)
+            if text is None:
+                continue
+            text = str(text).strip()
+            if text:
+                argv.append(text)
     if command_name == "aladin":
         _append_arg(argv, "--aladin-codes", parameters.get("aladin_codes"))
 
@@ -476,6 +543,7 @@ def build_parser():
         "opmanual-to-bit-xml",
         help=INTERFACE_OPERATIONS["opmanual-to-bit-xml"]["description"],
     )
+    add_project_arguments(opmanual)
     opmanual.add_argument("opmanual_files", nargs="*")
 
     for name in ("convert-image", "convert-images"):
@@ -513,6 +581,7 @@ def build_parser():
         "convert-sap-to-bit-xml",
         help=HELPER_OPERATIONS["convert-sap-to-bit-xml"]["description"],
     )
+    add_project_arguments(sap)
     sap.add_argument("--etk-file", required=True)
     sap.add_argument("--output-file", default=None)
 

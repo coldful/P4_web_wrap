@@ -11,8 +11,9 @@ from p4_web.domain.enums import ArtifactKind, JobKind, JobStatus
 from p4_web.persistence.database import Base
 from p4_web.persistence.models import Artifact, FileObject, JobLog, ProjectVersion
 from p4_web.services.jobs import create_job, get_job, run_job
-from p4_web.services.sync_import import import_local_folder
 from p4_web.storage.local import LocalStorage
+
+from .conftest import import_project_version
 
 
 async def test_pack_modules_creates_new_version_and_stores_report_artifact(
@@ -71,7 +72,7 @@ async def test_pack_modules_creates_new_version_and_stores_report_artifact(
 
     try:
         async with session_factory() as session:
-            project, version = await import_local_folder(
+            project, version = await import_project_version(
                 session=session,
                 storage=storage,
                 root=source_project,

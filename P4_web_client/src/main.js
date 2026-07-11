@@ -119,12 +119,12 @@ function renderRibbon(project, version) {
         legacyTool("new-project", "000pp001.bmp", "Create project"),
       ]),
       ribbonGroup("Open from folder", [
-        legacyTool("import-local", "penguin.png", "Change folder"),
+        legacyTool("open-upload-import", "penguin.png", "Change folder"),
         legacyDropdown("project-directory", "penguin.png", "Select project", renderProjectMenu("project-directory")),
       ]),
       ribbonGroup("Open directly", [
         legacyDropdown("last-used", "penguin.png", "Last used", renderProjectMenu("last-used")),
-        legacyTool("import-local", "gtk-open.png", "Archived"),
+        legacyTool("open-upload-import", "gtk-open.png", "Archived"),
       ]),
     ],
     Project: [
@@ -1144,7 +1144,7 @@ async function onAction(event) {
     "new-project": () => openModal({ type: "project" }),
     "copy-project": () => openModal({ type: "copy-project" }),
     "delete-project": () => openModal({ type: "delete-project" }),
-    "import-local": () => openModal({ type: "local-import" }),
+    "open-upload-import": () => openModal({ type: "local-import" }),
     "new-version": () => openModal({ type: "version" }),
     "close-modal": closeModal,
     "preview-file": () => openFilePreview(fileId),

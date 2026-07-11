@@ -54,23 +54,16 @@ Core concepts:
 See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the detailed
 implementation plan.
 
-## Manual Sync
+## Local Scan
 
 ```bash
 p4web sync scan ../000_Marine_A
-p4web sync import-local ../000_Marine_A --project-name "000 Marine A" --label "initial import"
-```
-
-There is also a shorter alias:
-
-```bash
-p4web import-local ../000_Marine_A --project-name "000 Marine A" --label "initial import"
 ```
 
 See [docs/LOCAL_SYNC.md](docs/LOCAL_SYNC.md).
 
-The same import flow is exposed through the web client via **Import local project**.
-Use a path that is visible to the backend process.
+Project import is available only through the web client via **Import local project**,
+which uploads the selected folder from the user's browser.
 Jobs run against the imported project version snapshot, not against the mutable
 local source folder.
 

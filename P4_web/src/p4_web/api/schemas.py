@@ -171,13 +171,6 @@ class SyncManifestRead(BaseModel):
     files: list[SyncManifestItem]
 
 
-class LocalImportRequest(BaseModel):
-    path: str
-    project_id: str | None = None
-    project_name: str | None = None
-    label: str | None = None
-
-
 class LocalImportRead(BaseModel):
     project: ProjectRead
     version: VersionRead

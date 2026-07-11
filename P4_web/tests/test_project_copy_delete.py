@@ -9,8 +9,9 @@ from p4_web.domain.enums import ArtifactKind, FileRole
 from p4_web.persistence.database import Base
 from p4_web.persistence.models import Artifact, FileObject, ProjectVersion
 from p4_web.services.projects import NotFoundError, copy_project, delete_project, get_project
-from p4_web.services.sync_import import import_local_folder
 from p4_web.storage.local import LocalStorage
+
+from .conftest import import_project_version
 
 
 async def test_copy_project_creates_server_copy_and_delete_keeps_local_files(
@@ -30,7 +31,7 @@ async def test_copy_project_creates_server_copy_and_delete_keeps_local_files(
 
     try:
         async with session_factory() as session:
-            project, version = await import_local_folder(
+            project, version = await import_project_version(
                 session=session,
                 storage=storage,
                 root=source_project,

@@ -101,11 +101,6 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   deleteProject: (projectId) => request(`/projects/${projectId}`, { method: "DELETE" }),
-  importLocal: (payload) =>
-    request("/sync/import-local", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
   importUpload: (formData) =>
     requestForm("/sync/import-upload", formData, {
       method: "POST",

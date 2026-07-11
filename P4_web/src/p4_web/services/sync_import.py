@@ -14,38 +14,6 @@ from p4_web.storage import StorageBackend
 from p4_web.sync import compute_manifest
 
 
-async def import_local_folder(
-    session: AsyncSession,
-    storage: StorageBackend,
-    root: Path,
-    project_id: str | None = None,
-    project_name: str | None = None,
-    label: str | None = None,
-    actor_id: str | None = None,
-) -> tuple[Project, ProjectVersion]:
-    root = root.resolve()
-    if project_id:
-        project = await get_project(session, project_id)
-    else:
-        name = project_name or root.name
-        project = await create_project(
-            session,
-            ProjectCreate(name=name, local_path_hint=str(root)),
-            actor_id=actor_id,
-        )
-
-    version = await import_workspace_version(
-        session=session,
-        storage=storage,
-        root=root,
-        project_id=project.id,
-        label=label or "manual import",
-        actor_id=actor_id,
-    )
-    await session.refresh(project)
-    return project, version
-
-
 async def import_uploaded_folder(
     session: AsyncSession,
     storage: StorageBackend,

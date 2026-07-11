@@ -327,7 +327,7 @@ def build_web_job_argv(args):
         _append_bool_flag(argv, "--noimages", parameters.get("noimages"))
     if command_name in ("pack-modules", "unpack-modules"):
         _append_arg(argv, "--schema", parameters.get("schema"))
-    if command_name in ("generate-lists", "check-index", "xsl-fo"):
+    if command_name in ("generate-lists", "check-index", "xsl-fo", "texml-pdf"):
         _append_arg(
             argv,
             "--xml-file",
@@ -571,7 +571,7 @@ def build_parser():
     )
     server.add_argument("connection")
 
-    for name in ("generate-lists", "check-index", "xsl-fo"):
+    for name in ("generate-lists", "check-index", "xsl-fo", "texml-pdf"):
         command_parser = sub.add_parser(name, help=HELPER_OPERATIONS[name]["description"])
         add_project_arguments(command_parser)
         command_parser.add_argument("--xml-file", default=None)

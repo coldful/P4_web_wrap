@@ -31,3 +31,7 @@ const paths = {
 export function icon(name) {
   return `<svg class="icon" ${common}>${paths[name] || paths.file}</svg>`;
 }
+
+export function legacyIcon(fileName, className = "legacy-icon") {
+  return `<img class="${className}" src="./src/legacy-images/${fileName}" alt="" aria-hidden="true" />`;
+}

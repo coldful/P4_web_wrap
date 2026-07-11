@@ -1,19 +1,19 @@
-import { api, getApiBase, setApiBase } from "./api.js?v=20260628-preview3";
-import { icon } from "./icons.js?v=20260628-preview3";
+import { api, getApiBase, setApiBase } from "./api.js?v=20260704-import-upload-fix1";
+import { icon, legacyIcon } from "./icons.js?v=20260704-import-upload-fix1";
 import {
   getFileJobConfig,
   getModuleJobConfig,
   isFileJob,
   isModuleJob,
   MODULE_JOB_SCHEMAS,
-} from "./job-config.js?v=20260628-preview3";
+} from "./job-config.js?v=20260704-import-upload-fix1";
 import {
   escapeHtml,
   formatBytes,
   formatDate,
   shortId,
   statusBadge,
-} from "./utils.js?v=20260628-preview3";
+} from "./utils.js?v=20260704-import-upload-fix1";
 
 const RECENT_JOBS_KEY = "p4web.client.recentJobs";
 const SELECTED_PROJECT_KEY = "p4web.client.selectedProjectId";
@@ -34,7 +34,9 @@ const state = {
   selectedVersionId: localStorage.getItem(SELECTED_VERSION_KEY),
   selectedJobId: localStorage.getItem(SELECTED_JOB_KEY),
   activeTab: "overview",
+  activeRibbonPage: null,
   language: localStorage.getItem(LANGUAGE_KEY) || "de",
+  openMenu: null,
   busy: false,
   modal: null,
   toast: null,
@@ -110,44 +112,128 @@ function renderTopbar() {
 
 function renderRibbon(project, version) {
   const disabled = isRunnable() ? "" : "disabled";
-  const reviewDisabled = version ? "" : "disabled";
+  const projectDisabled = project ? "" : "disabled";
+  const pages = {
+    File: [
+      ribbonGroup("New", [
+        legacyTool("new-project", "000pp001.bmp", "Create project"),
+      ]),
+      ribbonGroup("Open from folder", [
+        legacyTool("import-local", "penguin.png", "Change folder"),
+        legacyDropdown("project-directory", "penguin.png", "Select project", renderProjectMenu("project-directory")),
+      ]),
+      ribbonGroup("Open directly", [
+        legacyDropdown("last-used", "penguin.png", "Last used", renderProjectMenu("last-used")),
+        legacyTool("import-local", "gtk-open.png", "Archived"),
+      ]),
+    ],
+    Project: [
+      ribbonGroup("Generate", [
+        legacyHybrid(
+          "job:generate_pdf",
+          "pdf-variants",
+          "000pp013.bmp",
+          "PDF",
+          renderMenu("pdf-variants", [
+            menuAction("job:generate_pdf", "default: all pdfs", disabled),
+            menuParamAction("generate_pdf", "pdf_scope", "main", "only the main pdf", disabled),
+            menuParamAction("generate_pdf", "pdf_scope", "extra", "only the extra pdfs", disabled),
+            menuAction("job:texml_pdf", "TeXML PDF", disabled),
+            menuAction("job:xsl_fo", "XSL-FO Processing", disabled),
+          ]),
+          disabled,
+        ),
+        legacyTool("job:generate_html", "000pp028.bmp", "HTML", disabled),
+      ]),
+      ribbonGroup("Aladin", [
+        legacyTool("job:generate_html", "penguin.png", "Demo", disabled),
+        legacyUnavailable("penguin.png", "HTML for one code"),
+        legacyTool("job:generate_html", "000pp028.bmp", "HTML site", disabled),
+      ]),
+      ribbonGroup("Data source", [
+        legacyUnavailable("000pp005.bmp", "Kustode in Excel"),
+        legacyTabTool("files", "300pp031.bmp", "XML source", projectDisabled),
+        legacyUnavailable("000pp016.bmp", "CSV import"),
+        legacyTool("job:convert_sap_to_bit_xml", "000pp017.bmp", "ETK SAP import", disabled),
+      ]),
+      ribbonGroup("Translation", [
+        legacyTool("job:import_translation", "000pp011.bmp", "Import", disabled),
+        legacyTool("job:export_translation", "000pp010.bmp", "Export", disabled),
+      ]),
+      ribbonGroup("Languages", [
+        renderLanguageButtons(),
+      ]),
+    ],
+    Advanced: [
+      ribbonGroup("Text modules", [
+        legacyTool("job:pack_modules", "000pp008.bmp", "Pack", disabled),
+        legacyTool("job:unpack_modules", "000pp009.bmp", "Unpack", disabled),
+      ]),
+      ribbonGroup("Uncategorized", [
+        legacyUnavailable("branch.gif", "Trunk to branch"),
+        legacyHybrid(
+          "job:cut_source",
+          "cut-source-variants",
+          "300pp033.bmp",
+          "Cut source",
+          renderMenu("cut-source-variants", [
+            menuAction("job:generate_lists", "Generate lists", disabled),
+            menuDisabled("Generate drawing register"),
+            menuAction("job:check_index", "Check index", disabled),
+          ]),
+          disabled,
+        ),
+        legacyUnavailable("000pp014.bmp", "Open keyseq file"),
+        legacyUnavailable("penguin.png", "Create P2 project"),
+      ]),
+      ribbonGroup("Debug", [
+        legacyUnavailable("000pp003.bmp", "More messages"),
+        legacyUnavailable("000pp007.bmp", "Open as TeX"),
+      ]),
+    ],
+    Subsystem: [
+      ribbonGroup("Tools", [
+        legacyUnavailable("000pp017.bmp", "Mini-ETK"),
+      ]),
+      ribbonGroup("Conversion", [
+        legacyTool("job:convert_sap_to_bit_xml", "000pp017.bmp", "ETK SAP to bitplant XML", projectDisabled),
+        legacyTool("job:convert_opmanual_to_bit_xml", "penguin.png", "Opmanual to bitplant XML", projectDisabled),
+      ]),
+    ],
+    Config: [
+      ribbonGroup("Resources", [
+        legacyUnavailable("000pp002.bmp", "Stylesheets"),
+        legacyUnavailable("000pp012.bmp", "Images"),
+        legacyUnavailable("penguin.png", "Upload files"),
+      ]),
+      ribbonGroup("Settings", [
+        legacyTool("focus-api-base", "000pp003.bmp", "Server IP"),
+        legacyUnavailable("000pp004.bmp", "Paths"),
+        legacyUnavailable("penguin.png", "Layout"),
+      ]),
+      ribbonGroup("Variables", [
+        legacyUnavailable("penguin.png", "Defaults by keyseq"),
+        legacyUnavailable("penguin.png", "Defaults in template"),
+        legacyUnavailable("penguin.png", "Reconfigure project"),
+      ]),
+    ],
+  };
+  if (!pages[state.activeRibbonPage]) state.activeRibbonPage = project ? "Project" : "File";
   return `
-    <nav class="ribbon" aria-label="P4 actions">
-      ${ribbonGroup("File", [
-        tool("new-project", "plus", "Create project"),
-        tool("import-local", "upload", "Import local project"),
-        tool("refresh", "refresh", "Refresh"),
-      ])}
-      ${ribbonGroup("Project", [
-        tool("copy-project", "copy", "Copy project", project ? "" : "disabled"),
-        tool("delete-project", "trash", "Delete project", project ? "" : "disabled"),
-        tool("new-version", "file", "Create version", project ? "" : "disabled"),
-        tool("job:generate_pdf", "pdf", "Generate PDF", disabled),
-        tool("job:generate_html", "html", "Generate HTML", disabled),
-        tool("job:xsl_fo", "file", "XSL-FO", disabled),
-      ])}
-      ${ribbonGroup("Source", [
-        tool("job:cut_source", "scissors", "Cut source", disabled),
-        tool("job:generate_lists", "list", "Generate lists", disabled),
-        tool("job:check_index", "search", "Check index", disabled),
-      ])}
-      ${ribbonGroup("Translation", [
-        tool("job:export_translation", "translate", "Export translation", disabled),
-        tool("job:import_translation", "upload", "Import translation", disabled),
-      ])}
-      ${ribbonGroup("Text Modules", [
-        tool("job:pack_modules", "package", "Pack modules", disabled),
-        tool("job:unpack_modules", "package", "Unpack modules", disabled),
-      ])}
-      ${ribbonGroup("Subsystem", [
-        tool("job:convert_sap_to_bit_xml", "branch", "ETK SAP to bitplant XML", disabled),
-        tool("job:convert_opmanual_to_bit_xml", "file", "Opmanual to bitplant XML", disabled),
-      ])}
-      ${ribbonGroup("Review", [
-        tool("submit-version", "clock", "Submit version", reviewDisabled),
-        tool("approve-version", "check", "Approve version", reviewDisabled),
-        tool("reject-version", "x", "Reject version", reviewDisabled),
-      ])}
+    <nav class="ribbon legacy-ribbon" aria-label="P4 actions">
+      <div class="ribbon-tabs" role="tablist">
+        ${Object.keys(pages).map((page) => `
+          <button
+            class="ribbon-tab ${state.activeRibbonPage === page ? "active" : ""}"
+            data-ribbon-page="${escapeHtml(page)}"
+            role="tab"
+            aria-selected="${state.activeRibbonPage === page ? "true" : "false"}"
+          >${escapeHtml(page)}</button>
+        `).join("")}
+      </div>
+      <div class="ribbon-page" role="tabpanel">
+        ${pages[state.activeRibbonPage].join("")}
+      </div>
     </nav>
   `;
 }
@@ -161,11 +247,122 @@ function ribbonGroup(title, buttons) {
   `;
 }
 
-function tool(action, iconName, title, disabled = "") {
+function legacyTool(action, iconFile, title, disabled = "") {
   return `
-    <button class="tool-button" data-action="${escapeHtml(action)}" title="${escapeHtml(title)}" ${disabled}>
-      ${icon(iconName)}
+    <button class="tool-button legacy-tool" data-action="${escapeHtml(action)}" title="${escapeHtml(title)}" ${disabled}>
+      ${legacyIcon(iconFile)}
+      <span>${escapeHtml(title)}</span>
     </button>
+  `;
+}
+
+function legacyTabTool(tab, iconFile, title, disabled = "") {
+  return `
+    <button class="tool-button legacy-tool" data-tab="${escapeHtml(tab)}" title="${escapeHtml(title)}" ${disabled}>
+      ${legacyIcon(iconFile)}
+      <span>${escapeHtml(title)}</span>
+    </button>
+  `;
+}
+
+function legacyUnavailable(iconFile, title) {
+  return `
+    <button class="tool-button legacy-tool unavailable" title="${escapeHtml(title)} is not available in the web version yet" disabled>
+      ${legacyIcon(iconFile)}
+      <span>${escapeHtml(title)}</span>
+    </button>
+  `;
+}
+
+function legacyDropdown(menuId, iconFile, title, menuHtml, disabled = "") {
+  return `
+    <div class="ribbon-menu-wrap">
+      <button class="tool-button legacy-tool dropdown-only" data-action="toggle-menu" data-menu-id="${escapeHtml(menuId)}" title="${escapeHtml(title)}" ${disabled}>
+        ${legacyIcon(iconFile)}
+        <span>${escapeHtml(title)}</span>
+        <span class="drop-mark" aria-hidden="true"></span>
+      </button>
+      ${menuHtml}
+    </div>
+  `;
+}
+
+function legacyHybrid(action, menuId, iconFile, title, menuHtml, disabled = "") {
+  return `
+    <div class="legacy-hybrid ribbon-menu-wrap">
+      <button class="tool-button legacy-tool hybrid-main" data-action="${escapeHtml(action)}" title="${escapeHtml(title)}" ${disabled}>
+        ${legacyIcon(iconFile)}
+        <span>${escapeHtml(title)}</span>
+      </button>
+      <button class="hybrid-drop" data-action="toggle-menu" data-menu-id="${escapeHtml(menuId)}" title="${escapeHtml(title)} variants" ${disabled}>
+        <span class="drop-mark" aria-hidden="true"></span>
+      </button>
+      ${menuHtml}
+    </div>
+  `;
+}
+
+function renderMenu(menuId, items) {
+  return `
+    <div class="ribbon-menu ${state.openMenu === menuId ? "open" : ""}" role="menu">
+      ${items.join("")}
+    </div>
+  `;
+}
+
+function renderProjectMenu(menuId) {
+  const items = state.projects.map((project) => `
+    <button class="ribbon-menu-item" data-project-id="${escapeHtml(project.id)}" role="menuitem">
+      ${legacyIcon("000pp001.bmp", "menu-icon")}
+      <span>${escapeHtml(project.name)}</span>
+    </button>
+  `);
+  if (!items.length) items.push(`<button class="ribbon-menu-item" disabled>No projects</button>`);
+  return renderMenu(menuId, items);
+}
+
+function menuAction(action, label, disabled = "") {
+  return `
+    <button class="ribbon-menu-item plain-menu-item" data-action="${escapeHtml(action)}" ${disabled} role="menuitem">
+      <span>${escapeHtml(label)}</span>
+    </button>
+  `;
+}
+
+function menuParamAction(kind, key, value, label, disabled = "") {
+  return `
+    <button
+      class="ribbon-menu-item plain-menu-item"
+      data-action="job-param"
+      data-job-kind="${escapeHtml(kind)}"
+      data-param-key="${escapeHtml(key)}"
+      data-param-value="${escapeHtml(value)}"
+      ${disabled}
+      role="menuitem"
+    >
+      <span>${escapeHtml(label)}</span>
+    </button>
+  `;
+}
+
+function menuDisabled(label) {
+  return `<button class="ribbon-menu-item plain-menu-item" disabled role="menuitem">${escapeHtml(label)}</button>`;
+}
+
+function renderLanguageButtons() {
+  return `
+    <div class="ribbon-language-buttons">
+      ${["de", "en", "fr", "es", "pt", "ru", "zh"].map((lang) => `
+        <button
+          class="language-flag ${state.language === lang ? "active" : ""}"
+          data-language="${lang}"
+          title="${escapeHtml(lang)}"
+          aria-label="${escapeHtml(lang)}"
+        >
+          <span>${escapeHtml(lang)}</span>
+        </button>
+      `).join("")}
+    </div>
   `;
 }
 
@@ -686,6 +883,8 @@ function renderLocalImportModal() {
     ["", "New project"],
     ...state.projects.map((project) => [project.id, project.name]),
   ];
+  const selectedFiles = state.modal?.uploadedFiles || [];
+  const detectedFolderName = state.modal?.detectedFolderName || "";
   return `
     <div class="modal-backdrop">
       <form class="modal" id="local-import-form">
@@ -694,7 +893,17 @@ function renderLocalImportModal() {
           <button type="button" class="icon-button" data-action="close-modal" title="Close">${icon("x")}</button>
         </header>
         <div class="modal-body">
-          ${field("path", "Local path", "text", "", true)}
+          <input id="local-import-folder-input" type="file" webkitdirectory directory multiple hidden />
+          <div class="field">
+            <label>Project folder</label>
+            <div class="folder-picker-row">
+              <button type="button" class="text-button" data-action="browse-local-folder">${icon("folder")} Choose folder</button>
+              <div class="folder-picker-meta">
+                <strong>${escapeHtml(detectedFolderName || "No folder selected")}</strong>
+                <span class="muted small">${selectedFiles.length ? `${selectedFiles.length} files selected` : "The whole folder will be uploaded with subfolders."}</span>
+              </div>
+            </div>
+          </div>
           ${selectField("project_id", "Target", targetOptions)}
           ${field("project_name", "Project name", "text")}
           ${field("label", "Version label", "text", "manual import")}
@@ -859,17 +1068,35 @@ function bindEvents() {
   root.querySelectorAll("[data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeTab = button.dataset.tab;
+      state.openMenu = null;
+      render();
+    });
+  });
+  root.querySelectorAll("[data-ribbon-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeRibbonPage = button.dataset.ribbonPage;
+      state.openMenu = null;
+      render();
+    });
+  });
+  root.querySelectorAll("[data-language]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.language = button.dataset.language;
+      localStorage.setItem(LANGUAGE_KEY, state.language);
+      state.openMenu = null;
       render();
     });
   });
   root.querySelector("#language-select")?.addEventListener("change", (event) => {
     state.language = event.target.value;
     localStorage.setItem(LANGUAGE_KEY, state.language);
+    render();
   });
   root.querySelector("#project-form")?.addEventListener("submit", submitProjectForm);
   root.querySelector("#copy-project-form")?.addEventListener("submit", submitCopyProjectForm);
   root.querySelector("#delete-project-form")?.addEventListener("submit", submitDeleteProjectForm);
   root.querySelector("#local-import-form")?.addEventListener("submit", submitLocalImportForm);
+  root.querySelector("#local-import-folder-input")?.addEventListener("change", onLocalImportFolderChange);
   root.querySelector("#version-form")?.addEventListener("submit", submitVersionForm);
   root.querySelector("#module-job-form")?.addEventListener("submit", submitModuleJobForm);
   root.querySelector("#file-job-form")?.addEventListener("submit", submitFileJobForm);
@@ -881,6 +1108,20 @@ async function onAction(event) {
   const fileId = event.currentTarget.dataset.fileId;
   const artifactId = event.currentTarget.dataset.artifactId;
   if (!action || event.currentTarget.disabled) return;
+  if (action === "toggle-menu") {
+    const menuId = event.currentTarget.dataset.menuId;
+    state.openMenu = state.openMenu === menuId ? null : menuId;
+    render();
+    return;
+  }
+  state.openMenu = null;
+  if (action === "job-param") {
+    const kind = event.currentTarget.dataset.jobKind;
+    const key = event.currentTarget.dataset.paramKey;
+    const value = event.currentTarget.dataset.paramValue;
+    if (kind && key) await startJob(kind, { [key]: value });
+    return;
+  }
   if (action.startsWith("job:")) {
     const kind = action.slice(4);
     if (isModuleJob(kind)) {
@@ -898,6 +1139,8 @@ async function onAction(event) {
     refresh: refreshAll,
     "refresh-jobs": refreshRecentJobs,
     "save-api-base": saveApiBase,
+    "focus-api-base": focusApiBase,
+    "browse-local-folder": browseLocalFolder,
     "new-project": () => openModal({ type: "project" }),
     "copy-project": () => openModal({ type: "copy-project" }),
     "delete-project": () => openModal({ type: "delete-project" }),
@@ -915,6 +1158,16 @@ async function onAction(event) {
   await handlers[action]?.();
 }
 
+function focusApiBase() {
+  const input = root.querySelector("#api-base-input");
+  input?.focus();
+  input?.select();
+}
+
+function browseLocalFolder() {
+  root.querySelector("#local-import-folder-input")?.click();
+}
+
 async function saveApiBase() {
   const input = root.querySelector("#api-base-input");
   setApiBase(input?.value || "");
@@ -923,7 +1176,15 @@ async function saveApiBase() {
 }
 
 function openModal(modal) {
-  state.modal = modal;
+  if (modal?.type === "local-import") {
+    state.modal = {
+      uploadedFiles: [],
+      detectedFolderName: "",
+      ...modal,
+    };
+  } else {
+    state.modal = modal;
+  }
   render();
 }
 
@@ -1076,15 +1337,21 @@ async function submitDeleteProjectForm(event) {
 
 async function submitLocalImportForm(event) {
   event.preventDefault();
+  const files = state.modal?.uploadedFiles || [];
+  if (!files.length) {
+    notify("Choose a project folder first");
+    return;
+  }
   const data = Object.fromEntries(new FormData(event.currentTarget).entries());
-  const payload = {
-    path: data.path,
-    project_id: data.project_id || null,
-    project_name: data.project_name || null,
-    label: data.label || "manual import",
-  };
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file, file.webkitRelativePath || file.name);
+  }
+  formData.append("project_id", data.project_id || "");
+  formData.append("project_name", data.project_name || "");
+  formData.append("label", data.label || "manual import");
   await runAction(async () => {
-    const result = await api.importLocal(payload);
+    const result = await api.importUpload(formData);
     state.selectedProjectId = result.project.id;
     state.selectedVersionId = result.version.id;
     localStorage.setItem(SELECTED_PROJECT_KEY, result.project.id);
@@ -1093,6 +1360,22 @@ async function submitLocalImportForm(event) {
     await refreshAll();
     notify("Local project imported");
   });
+}
+
+function onLocalImportFolderChange(event) {
+  const files = Array.from(event.target.files || []);
+  state.modal = {
+    ...(state.modal || {}),
+    type: "local-import",
+    uploadedFiles: files,
+    detectedFolderName: detectUploadedFolderName(files),
+  };
+  render();
+}
+
+function detectUploadedFolderName(files) {
+  const relativePath = files.find((file) => file.webkitRelativePath)?.webkitRelativePath || "";
+  return relativePath.split("/").filter(Boolean)[0] || "";
 }
 
 async function submitVersionForm(event) {
@@ -1211,6 +1494,7 @@ async function startJob(kind, overrides = {}) {
 
 async function selectProject(projectId) {
   state.selectedProjectId = projectId;
+  state.openMenu = null;
   localStorage.setItem(SELECTED_PROJECT_KEY, projectId);
   await loadProject(projectId);
   render();
@@ -1218,6 +1502,7 @@ async function selectProject(projectId) {
 
 async function selectVersion(versionId) {
   state.selectedVersionId = versionId;
+  state.openMenu = null;
   localStorage.setItem(SELECTED_VERSION_KEY, versionId);
   await loadVersion(versionId);
   render();
@@ -1225,6 +1510,7 @@ async function selectVersion(versionId) {
 
 async function selectJob(jobId) {
   state.selectedJobId = jobId;
+  state.openMenu = null;
   localStorage.setItem(SELECTED_JOB_KEY, jobId);
   state.jobLogs = [];
   await refreshJob(jobId);

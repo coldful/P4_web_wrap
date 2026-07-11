@@ -41,6 +41,22 @@ export async function request(path, options = {}) {
   return data;
 }
 
+export async function requestForm(path, body, options = {}) {
+  const response = await fetch(buildApiUrl(path), {
+    ...options,
+    method: options.method || "POST",
+    body,
+  });
+
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const message = data?.detail || response.statusText || "API request failed";
+    throw new ApiError(message, response.status, data);
+  }
+  return data;
+}
+
 async function rawRequest(url, options = {}) {
   const response = await fetch(url, options);
   if (!response.ok) {
@@ -89,6 +105,14 @@ export const api = {
     request("/sync/import-local", {
       method: "POST",
       body: JSON.stringify(payload),
+    }),
+  importUpload: (formData) =>
+    requestForm("/sync/import-upload", formData, {
+      method: "POST",
+    }),
+  importupload: (formData) =>
+    requestForm("/sync/import-upload", formData, {
+      method: "POST",
     }),
   getProject: (projectId) => request(`/projects/${projectId}`),
 

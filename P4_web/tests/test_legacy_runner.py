@@ -54,6 +54,32 @@ def test_legacy_runner_builds_helper_command_for_generate_lists() -> None:
     assert str(project_path / "001/source.xml") in command
 
 
+def test_legacy_runner_builds_helper_command_for_texml_pdf() -> None:
+    runner = LegacyP4Runner(python_executable="python2.7")
+    project_path = Path("/tmp/workspace/project")
+    context = RunnerContext(
+        job_id="job-1",
+        project_id="project-1",
+        version_id="version-1",
+        kind=JobKind.TEXML_PDF,
+        parameters={"language": "de"},
+        workspace_dir=Path("/tmp/workspace"),
+        legacy_p4_app_path=Path("/tmp/P4_app"),
+    )
+
+    command = runner._build_command(
+        context,
+        Path("/tmp/P4_app"),
+        Path("/tmp/P4_app/interface.py"),
+        project_path,
+        "de",
+    )
+
+    assert command[:3] == ["python2.7", str(runner._legacy_helper_path()), "texml-pdf"]
+    assert "--project-path" in command
+    assert str(project_path) in command
+
+
 def test_legacy_runner_builds_interface_command_for_opmanual_files() -> None:
     runner = LegacyP4Runner(python_executable="python2.7")
     project_path = Path("/tmp/workspace/project")
@@ -164,3 +190,28 @@ def test_legacy_runner_builds_helper_command_with_output_dir_for_xsl_fo() -> Non
 
     assert "--output-dir" in command
     assert "/tmp/workspace/project" in command
+
+
+def test_legacy_runner_collects_texml_workspace_artifacts(tmp_path: Path) -> None:
+    runner = LegacyP4Runner()
+    project_path = tmp_path / "project"
+    texml_tmp = project_path / "_texml_pdf" / "project_TeX_de" / "tmp"
+    texml_out = project_path / "_texml_pdf" / "project_TeX_de" / "out"
+    texml_tmp.mkdir(parents=True)
+    texml_out.mkdir()
+    (texml_out / "manual.pdf").write_bytes(b"%PDF-1.4\n")
+    (texml_tmp / "manual.tex").write_text("\\section{Demo}\n", encoding="utf-8")
+    (texml_tmp / "manual.texml").write_text("<TeXML />\n", encoding="utf-8")
+
+    artifacts = runner._collect_artifacts(JobKind.TEXML_PDF, project_path)
+
+    assert [artifact.path for artifact in artifacts] == [
+        "_texml_pdf/project_TeX_de/out/manual.pdf",
+        "_texml_pdf/project_TeX_de/tmp/manual.tex",
+        "_texml_pdf/project_TeX_de/tmp/manual.texml",
+    ]
+    assert [artifact.kind for artifact in artifacts] == [
+        ArtifactKind.PDF,
+        ArtifactKind.REPORT,
+        ArtifactKind.REPORT,
+    ]

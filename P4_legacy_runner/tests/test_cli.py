@@ -100,6 +100,36 @@ def test_run_web_job_maps_generate_pdf_to_cli_command() -> None:
     ]
 
 
+def test_run_web_job_maps_texml_pdf_to_cli_command() -> None:
+    args = cli.parse_args(
+        [
+            "run-web-job",
+            "--operation",
+            "texml_pdf",
+            "--project-path",
+            "/work/project",
+            "--language",
+            "de",
+        ]
+    )
+
+    assert cli.build_web_job_argv(args) == [
+        "texml-pdf",
+        "--project-path",
+        "/work/project",
+        "--language",
+        "de",
+    ]
+
+
+def test_texml_pdf_builds_helper_command() -> None:
+    command = build(["texml-pdf", "--project-path", "/work/project", "--language", "de"])
+
+    assert command[:3] == ["python2.7", cli.helper_path(), "texml-pdf"]
+    assert "--p4-app-path" in command
+    assert "--project-path" in command
+
+
 def test_run_web_job_remaps_project_relative_helper_paths_to_container_workspace() -> None:
     args = cli.parse_args(
         [

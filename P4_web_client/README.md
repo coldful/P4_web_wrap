@@ -9,6 +9,12 @@ python3 -m http.server 5173
 
 Open http://localhost:5173.
 
+The compact legacy-focused client is also available at:
+
+```text
+http://localhost:5173/reduced/
+```
+
 The API base defaults to `http://localhost:8000/api` and can be changed in the
 top connection field.
 

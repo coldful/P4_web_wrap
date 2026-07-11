@@ -61,6 +61,7 @@ chmod +x ./prepare_p4_stack.sh ./run_p4_stack.sh
 После запуска будут доступны:
 
 - frontend: `http://127.0.0.1:5173`
+- reduced frontend: `http://127.0.0.1:5173/reduced/`
 - backend API: `http://127.0.0.1:8000`
 - OpenAPI: `http://127.0.0.1:8000/docs`
 - health check: `http://127.0.0.1:8000/api/health`
@@ -73,8 +74,30 @@ chmod +x ./prepare_p4_stack.sh ./run_p4_stack.sh
 
 - находит `uvicorn` в `P4_web/venv`, `P4_web/.venv` или в `PATH`
 - собирает Docker image для `P4_legacy_runner`
+- на Linux запускает legacy runner c `--network=host`, а на macOS автоматически
+  переключается на обычную Docker bridge-сеть
+- если frontend или backend уже слушают целевые порты, останавливает их и
+  запускает заново
 - поднимает backend на `127.0.0.1:8000`
 - поднимает frontend на `127.0.0.1:5173`
+
+Если нужно принудительно переопределить режим сети для legacy runner:
+
+```bash
+P4_STACK_LEGACY_DOCKER_NETWORK_MODE=bridge ./run_p4_stack.sh
+```
+
+Поддерживаемые значения: `auto`, `host`, `bridge`.
+
+Если base image для `P4_legacy_runner` недоступен из текущей сети, можно
+переопределить его без редактирования `Dockerfile`:
+
+```bash
+P4_STACK_LEGACY_BASE_IMAGE=my-registry/heinz_p4:latest ./run_p4_stack.sh
+```
+
+По умолчанию используется `s.egorkin/heinz_p4:latest`. Если этот registry не
+доступен, сборка legacy runner не стартует, пока не будет указан рабочий образ.
 
 ## Если нужен только backend + frontend без legacy
 
@@ -126,7 +149,8 @@ P4_STACK_LEGACY_APP_DIR=/abs/path/to/P4_app ./run_p4_stack.sh
 
 ### Порт `8000` или `5173` уже занят
 
-Останови старый процесс или задай другие порты:
+По умолчанию `run_p4_stack.sh` сам остановит старый listener на этом порту и
+поднимет новый. Если нужен параллельный запуск, задай другие порты:
 
 ```bash
 P4_STACK_BACKEND_PORT=8001 P4_STACK_FRONTEND_PORT=5174 ./run_p4_stack.sh

@@ -138,6 +138,18 @@ INTERFACE_OPERATIONS = {
 }
 
 HELPER_OPERATIONS = {
+    "texml-pdf": {
+        "web_kind": "texml_pdf",
+        "requires_project": True,
+        "artifact_globs": [
+            "_texml_pdf/**/*.pdf",
+            "_texml_pdf/**/*.tex",
+            "_texml_pdf/**/*.texml",
+            "_texml_pdf/**/*.log",
+        ],
+        "mutates_project": False,
+        "description": "Run legacy TeXML/P2 SCons PDF generation.",
+    },
     "generate-lists": {
         "web_kind": "generate_lists",
         "requires_project": True,

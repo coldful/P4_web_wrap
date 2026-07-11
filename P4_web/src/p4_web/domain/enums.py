@@ -18,6 +18,7 @@ class VersionStatus(StrEnum):
 class JobKind(StrEnum):
     GENERATE_PDF = "generate_pdf"
     GENERATE_HTML = "generate_html"
+    TEXML_PDF = "texml_pdf"
     XSL_FO = "xsl_fo"
     CUT_SOURCE = "cut_source"
     EXPORT_TRANSLATION = "export_translation"
@@ -71,4 +72,3 @@ class ResourcePackageKind(StrEnum):
     IMAGE_SET = "image_set"
     GLOBAL_CONFIG = "global_config"
     TEMPLATE = "template"
-

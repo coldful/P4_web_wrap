@@ -27,6 +27,7 @@ class LegacyP4Runner:
         JobKind.CONVERT_OPMANUAL_TO_BIT_XML: ["--opmanual-to-bitplant"],
     }
     HELPER_COMMANDS: dict[JobKind, str] = {
+        JobKind.TEXML_PDF: "texml-pdf",
         JobKind.XSL_FO: "xsl-fo",
         JobKind.GENERATE_LISTS: "generate-lists",
         JobKind.CHECK_INDEX: "check-index",
@@ -45,6 +46,12 @@ class LegacyP4Runner:
         JobKind.UNPACK_MODULES: [
             ("unpacked.txt", ArtifactKind.REPORT, "text/plain"),
             ("**/unpacked.txt", ArtifactKind.REPORT, "text/plain"),
+        ],
+        JobKind.TEXML_PDF: [
+            ("_texml_pdf/**/*.pdf", ArtifactKind.PDF, "application/pdf"),
+            ("_texml_pdf/**/*.tex", ArtifactKind.REPORT, "text/plain"),
+            ("_texml_pdf/**/*.texml", ArtifactKind.REPORT, "application/xml"),
+            ("_texml_pdf/**/*.log", ArtifactKind.REPORT, "text/plain"),
         ],
     }
 
@@ -380,7 +387,7 @@ class LegacyP4Runner:
             return ArtifactKind.HTML
         if suffix in {".xml", ".book"}:
             return ArtifactKind.XML
-        if suffix in {".fo", ".txt", ".log"}:
+        if suffix in {".fo", ".tex", ".texml", ".txt", ".log"}:
             return ArtifactKind.REPORT
         if suffix in {".zip", ".tar", ".gz", ".tgz"}:
             return ArtifactKind.PACKAGE
@@ -396,6 +403,10 @@ class LegacyP4Runner:
             return "application/xml"
         if suffix == ".fo":
             return "application/xml"
+        if suffix == ".texml":
+            return "application/xml"
+        if suffix in {".tex", ".log"}:
+            return "text/plain"
         if suffix == ".css":
             return "text/css"
         if suffix == ".js":

@@ -1,8 +1,11 @@
 from __future__ import print_function
 
 import argparse
+import glob
 import logging
 import os
+import shutil
+import subprocess
 import sys
 
 
@@ -25,7 +28,10 @@ def setup_logging(debug=False):
 
 def setup_legacy_services(p4_app_path):
     add_import_paths(p4_app_path)
-    import P4Locale
+    try:
+        import P4Locale
+    except ImportError:
+        import Locale as P4Locale
 
     P4Locale.force_utf8_hack()
 
@@ -126,6 +132,115 @@ def run_xsl_fo(args):
     return 0
 
 
+def _shell_join(argv):
+    return " ".join(argv)
+
+
+def _find_texml_project_dir(project, project_path, language):
+    candidates = []
+    try:
+        candidates.append(project.get_dir() + "_TeX_" + language)
+    except Exception:
+        pass
+    project_path = os.path.abspath(project_path)
+    candidates.append(project_path + "_TeX_" + language)
+    parent = os.path.dirname(project_path)
+    basename = os.path.basename(project_path)
+    candidates.extend(glob.glob(os.path.join(parent, basename + "*_TeX_" + language)))
+    for candidate in candidates:
+        if os.path.isfile(os.path.join(candidate, "SConstruct")):
+            return os.path.abspath(candidate)
+    return None
+
+
+def _copy_texml_project_to_workspace(texml_project_dir, project_path, language):
+    target_root = os.path.join(os.path.abspath(project_path), "_texml_pdf")
+    if not os.path.isdir(target_root):
+        os.makedirs(target_root)
+    target_name = os.path.basename(os.path.normpath(texml_project_dir))
+    if not target_name:
+        target_name = "project_TeX_" + language
+    target_dir = os.path.join(target_root, target_name)
+    if os.path.exists(target_dir):
+        shutil.rmtree(target_dir)
+    shutil.copytree(texml_project_dir, target_dir)
+    return target_dir
+
+
+def _collect_texml_artifacts(texml_project_dir):
+    patterns = [
+        os.path.join(texml_project_dir, "out", "*.pdf"),
+        os.path.join(texml_project_dir, "tmp", "*.pdf"),
+        os.path.join(texml_project_dir, "tmp", "*.tex"),
+        os.path.join(texml_project_dir, "tmp", "*.texml"),
+        os.path.join(texml_project_dir, "tmp", "*.log"),
+    ]
+    seen = set()
+    artifacts = []
+    for pattern in patterns:
+        for path in sorted(glob.glob(pattern)):
+            path = os.path.abspath(path)
+            if path in seen or not os.path.isfile(path):
+                continue
+            seen.add(path)
+            artifacts.append(path)
+    return artifacts
+
+
+def run_texml_pdf(args):
+    config, project_manager = setup_legacy_services(args.p4_app_path)
+    project = find_project(project_manager, args.project_path, args.project_name)
+    project_path = os.path.abspath(args.project_path)
+    interface_py = os.path.join(args.p4_app_path, "interface.py")
+    language = args.language or "de"
+
+    downgrade_cmd = [
+        sys.executable,
+        interface_py,
+        "--project-path",
+        project_path,
+        "--language",
+        language,
+        "--p2",
+    ]
+    if args.debug:
+        downgrade_cmd.append("--debug")
+    print("RUN {0}".format(_shell_join(downgrade_cmd)))
+    code = subprocess.call(downgrade_cmd, cwd=args.p4_app_path)
+    if code:
+        return code
+
+    texml_project_dir = _find_texml_project_dir(project, project_path, language)
+    if not texml_project_dir:
+        print(
+            "TeXML/P2 project was not created for language {0}.".format(language),
+            file=sys.stderr,
+        )
+        return 2
+
+    workspace_texml_dir = _copy_texml_project_to_workspace(
+        texml_project_dir,
+        project_path,
+        language,
+    )
+    print("TEXML_PROJECT {0}".format(workspace_texml_dir))
+
+    scons_cmd = config.get_cmd_scons()
+    pdf_cmd = [sys.executable, scons_cmd, "pdf"]
+    print("RUN {0}".format(_shell_join(pdf_cmd)))
+    code = subprocess.call(pdf_cmd, cwd=workspace_texml_dir)
+    if code:
+        return code
+
+    artifacts = _collect_texml_artifacts(workspace_texml_dir)
+    for artifact in artifacts:
+        print("RESULT {0}".format(artifact))
+    if not [path for path in artifacts if path.lower().endswith(".pdf")]:
+        print("TeXML PDF generation did not produce a PDF file.", file=sys.stderr)
+        return 2
+    return 0
+
+
 def run_convert_sap_to_bit_xml(args):
     setup_legacy_services(args.p4_app_path)
     import Configurator
@@ -155,7 +270,13 @@ def build_parser():
     parser = argparse.ArgumentParser(prog="legacy_helpers.py")
     parser.add_argument(
         "command",
-        choices=["generate-lists", "check-index", "xsl-fo", "convert-sap-to-bit-xml"],
+        choices=[
+            "generate-lists",
+            "check-index",
+            "xsl-fo",
+            "texml-pdf",
+            "convert-sap-to-bit-xml",
+        ],
     )
     parser.add_argument("--p4-app-path", required=True)
     parser.add_argument("--project-path")
@@ -182,6 +303,8 @@ def main(argv=None):
         return run_check_index(args)
     if args.command == "xsl-fo":
         return run_xsl_fo(args)
+    if args.command == "texml-pdf":
+        return run_texml_pdf(args)
     if args.command == "convert-sap-to-bit-xml":
         if not args.etk_file:
             parser.error("--etk-file is required for convert-sap-to-bit-xml")

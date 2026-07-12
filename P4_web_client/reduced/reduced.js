@@ -6,11 +6,12 @@ import {
   formatDate,
   statusBadge,
 } from "../src/utils.js?v=20260711-reduced1";
-import { icon } from "../src/icons.js?v=20260711-reduced1";
+import { icon } from "../src/icons.js?v=20260712-reduced2";
 
 const RECENT_JOBS_KEY = "p4web.reduced.recentJobs";
 const SELECTED_PROJECT_KEY = "p4web.reduced.selectedProjectId";
 const SELECTED_JOB_KEY = "p4web.reduced.selectedJobId";
+const LOG_JOB_KEY = "p4web.reduced.logJobId";
 const SELECTED_SERVICE_KEY = "p4web.reduced.selectedService";
 const LANGUAGE_KEY = "p4web.reduced.language";
 
@@ -76,13 +77,19 @@ const state = {
   files: [],
   artifacts: [],
   jobs: [],
+  jobLogs: [],
+  jobLogsJobId: null,
+  jobLogsLoading: false,
+  screen: "menu",
   selectedProjectId: localStorage.getItem(SELECTED_PROJECT_KEY),
   selectedJobId: localStorage.getItem(SELECTED_JOB_KEY),
+  logJobId: localStorage.getItem(LOG_JOB_KEY),
   selectedServiceId: localStorage.getItem(SELECTED_SERVICE_KEY) || "documents",
   selectedVersionId: null,
   language: localStorage.getItem(LANGUAGE_KEY) || "de",
   moduleSchema: MODULE_JOB_SCHEMAS[0]?.[0] || "proced.xsd",
   modal: null,
+  projectMenuId: null,
   toast: null,
   busy: false,
 };
@@ -105,6 +112,11 @@ function currentService() {
   return SERVICES.find((service) => service.id === state.selectedServiceId) || SERVICES[0];
 }
 
+function jobsForCurrentProject() {
+  const project = currentProject();
+  return project ? state.jobs.filter((job) => job.project_id === project.id) : state.jobs;
+}
+
 function isProjectReady() {
   return Boolean(currentProject() && currentVersion());
 }
@@ -113,16 +125,86 @@ function reducedLegacyIcon(fileName, className = "") {
   return `<img class="${className}" src="../src/legacy-images/${fileName}" alt="" aria-hidden="true" />`;
 }
 
+const DELIVERY_FLOW = [
+  { id: "new", label: "Captured" },
+  { id: "in_work", label: "In Work" },
+  { id: "freigegeben", label: "Released" },
+  { id: "in_translation", label: "In Translation" },
+  { id: "closed", label: "Closed" },
+];
+
+function deliveryStatusModel(version) {
+  const legacyDelivery = version?.manifest?.legacy_delivery;
+  if (legacyDelivery?.stage) {
+    const steps = Array.isArray(legacyDelivery.steps) && legacyDelivery.steps.length
+      ? legacyDelivery.steps
+      : DELIVERY_FLOW;
+    const currentIndex = steps.findIndex((step) => step.id === legacyDelivery.stage);
+    if (currentIndex < 0) {
+      return {
+        title: "Unknown",
+        caption: "Legacy project status could not be resolved from the project sheet.",
+        progress: 0,
+        tone: "muted",
+        steps: steps.map((step) => ({ ...step, state: "pending" })),
+      };
+    }
+    const progress = Math.round(((currentIndex + 1) / steps.length) * 100);
+    return {
+      title: steps[currentIndex]?.label || "Captured",
+      caption: `${currentIndex + 1} of ${steps.length} legacy delivery stages complete.`,
+      progress,
+      tone: legacyDelivery.stage === "closed" ? "good" : "work",
+      steps: steps.map((step, index) => ({
+        ...step,
+        state: index < currentIndex ? "complete" : index === currentIndex ? "current" : "pending",
+      })),
+    };
+  }
+
+  if (!version) {
+    return {
+      title: "No snapshot",
+      caption: "Import or select a project snapshot first.",
+      progress: 0,
+      tone: "idle",
+      steps: DELIVERY_FLOW.map((step) => ({ ...step, state: "pending" })),
+    };
+  }
+
+  return {
+    title: "Unavailable",
+    caption: "Legacy delivery status could not be resolved from this project snapshot.",
+    progress: 0,
+    tone: "muted",
+    steps: DELIVERY_FLOW.map((step) => ({ ...step, state: "pending" })),
+  };
+}
+
+function renderDeliveryProgress(version) {
+  const model = deliveryStatusModel(version);
+  return `
+    <div class="delivery-progress tone-${escapeHtml(model.tone)}">
+      <div class="delivery-progress-head">
+        <span>Delivery status</span>
+        <strong>${escapeHtml(model.title)}</strong>
+      </div>
+      <div class="delivery-progress-track" aria-hidden="true">
+        <span class="delivery-progress-fill" style="width: ${model.progress}%;"></span>
+        <div class="delivery-progress-points">
+          ${model.steps.map((step) => `<span class="delivery-point ${step.state}" title="${escapeHtml(step.label)}"></span>`).join("")}
+        </div>
+      </div>
+      <p class="delivery-progress-caption">${escapeHtml(model.caption)}</p>
+    </div>
+  `;
+}
+
 function render() {
   root.innerHTML = `
     <div class="reduced-shell">
       <main class="main-content">
-        ${renderServiceGrid()}
-        <section class="workspace-grid">
-          ${renderProjectPanel()}
-          ${renderActionPanel()}
-          ${renderActivityPanel()}
-        </section>
+        ${state.screen === "menu" ? renderMenuScreen() : renderWorkspaceScreen()}
       </main>
       ${state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : ""}
       ${state.modal ? renderModal() : ""}
@@ -130,6 +212,28 @@ function render() {
     </div>
   `;
   bindEvents();
+}
+
+function renderMenuScreen() {
+  return `
+    <section class="menu-screen">
+      ${renderServiceGrid()}
+    </section>
+  `;
+}
+
+function renderWorkspaceScreen() {
+  return `
+    <section class="workspace-screen">
+      <button class="floating-menu-button" type="button" data-action="back-to-menu">${icon("back")} Menu</button>
+      ${renderWorkspaceTopPanel()}
+      <section class="workspace-grid">
+        ${renderProjectPanel()}
+        ${renderActionPanel()}
+        ${renderActivityPanel()}
+      </section>
+    </section>
+  `;
 }
 
 function renderServiceGrid() {
@@ -146,10 +250,47 @@ function renderServiceGrid() {
           </div>
           <div class="service-body">
             <strong>${escapeHtml(service.title)}</strong>
-            <p>${escapeHtml(service.subtitle)}</p>
+            <p class="service-tooltip">${escapeHtml(service.subtitle)}</p>
           </div>
         </button>
       `).join("")}
+    </section>
+  `;
+}
+
+function renderWorkspaceTopPanel() {
+  const service = currentService();
+  const project = currentProject();
+  const version = currentVersion();
+  return `
+    <section class="workspace-top-panel">
+      <div class="workspace-top-head">
+        <div class="workspace-top-title">
+          <h1>${escapeHtml(service.title)}</h1>
+          <p>${escapeHtml(service.subtitle)}</p>
+        </div>
+      </div>
+      <div class="workspace-summary-grid">
+        <div class="workspace-summary-card">
+          <span>Project</span>
+          <strong>${escapeHtml(project?.name || "No project selected")}</strong>
+        </div>
+        <div class="workspace-summary-card workspace-summary-card-delivery">
+          ${renderDeliveryProgress(version)}
+        </div>
+        <div class="workspace-summary-card">
+          <span>Snapshot</span>
+          <strong>${version ? `#${version.version_number}` : "none"}</strong>
+        </div>
+        <div class="workspace-summary-card">
+          <span>Artifacts</span>
+          <strong>${state.artifacts.length}</strong>
+        </div>
+        <div class="workspace-summary-card">
+          <span>Files</span>
+          <strong>${state.files.length}</strong>
+        </div>
+      </div>
     </section>
   `;
 }
@@ -182,15 +323,39 @@ function renderProjectPanel() {
         `}
         <div class="project-stack">
           ${state.projects.map((item) => `
-            <button
-              class="project-item ${item.id === state.selectedProjectId ? "active" : ""}"
-              data-project-id="${escapeHtml(item.id)}"
-              title="Click to select project"
-            >
-              <strong>${escapeHtml(item.name)}</strong>
-              <span>${escapeHtml(item.slug)}</span>
-              <span>${formatDate(item.updated_at) || "No update time"}</span>
-            </button>
+            <div class="project-entry ${item.id === state.selectedProjectId ? "active" : ""}">
+              <button
+                class="project-item ${item.id === state.selectedProjectId ? "active" : ""}"
+                data-project-id="${escapeHtml(item.id)}"
+                title="Click to select project"
+              >
+                <strong>${escapeHtml(item.name)}</strong>
+                <span>${escapeHtml(item.slug)}</span>
+                <span>${formatDate(item.updated_at) || "No update time"}</span>
+              </button>
+              <button
+                class="project-menu-trigger"
+                type="button"
+                data-action="toggle-project-menu"
+                data-project-id="${escapeHtml(item.id)}"
+                aria-label="Project actions"
+                aria-expanded="${item.id === state.projectMenuId ? "true" : "false"}"
+              >
+                ${icon("more")}
+              </button>
+              ${item.id === state.projectMenuId ? `
+                <div class="project-menu">
+                  <button
+                    class="project-menu-item project-menu-item-danger"
+                    type="button"
+                    data-action="delete-project"
+                    data-project-id="${escapeHtml(item.id)}"
+                  >
+                    ${icon("trash")} Delete project
+                  </button>
+                </div>
+              ` : ""}
+            </div>
           `).join("") || `<div class="empty-state">No imported projects yet.</div>`}
         </div>
       </div>
@@ -314,8 +479,7 @@ function actionTile(title, text, kind, disabled, needsSchema = false) {
 }
 
 function renderActivityPanel() {
-  const project = currentProject();
-  const jobs = project ? state.jobs.filter((job) => job.project_id === project.id) : state.jobs;
+  const jobs = jobsForCurrentProject();
   const artifacts = [...state.artifacts].sort((left, right) => {
     return String(right.created_at || "").localeCompare(String(left.created_at || ""));
   });
@@ -337,7 +501,6 @@ function renderActivityPanel() {
               class="history-launch ${artifacts.length ? "" : "disabled"}"
               type="button"
               data-action="open-artifact-history"
-              data-dblaction="open-artifact-history"
               title="Click to open artifact list"
               ${artifacts.length ? "" : "disabled"}
             >
@@ -345,7 +508,7 @@ function renderActivityPanel() {
             </button>
           </div>
           ${recentArtifact ? `
-            <button class="artifact-button recent-artifact-card" data-action="open-artifact" data-artifact-id="${escapeHtml(recentArtifact.id)}">
+            <button class="artifact-button recent-artifact-card" type="button" data-action="open-artifact" data-artifact-id="${escapeHtml(recentArtifact.id)}">
               ${icon("download")}
               <span>
                 <strong>${escapeHtml(recentArtifact.path)}</strong>
@@ -356,12 +519,11 @@ function renderActivityPanel() {
         </section>
         <section class="list-block">
           <div class="list-head">
-            <strong>Recent job</strong>
+            <strong>Jobs &amp; Logs</strong>
             <button
               class="history-launch ${jobs.length ? "" : "disabled"}"
               type="button"
               data-action="open-job-history"
-              data-dblaction="open-job-history"
               title="Click to open recent job history"
               ${jobs.length ? "" : "disabled"}
             >
@@ -369,7 +531,7 @@ function renderActivityPanel() {
             </button>
           </div>
           ${recentJob ? `
-            <button class="project-link recent-job-card" data-job-id="${escapeHtml(recentJob.id)}">
+            <button class="project-link recent-job-card" type="button" data-action="open-job-history" data-job-id="${escapeHtml(recentJob.id)}">
               ${icon("clock")}
               <span>
                 <strong>${escapeHtml(recentJob.kind)}</strong>
@@ -491,13 +653,14 @@ function renderProjectFilesModal() {
 
 function renderJobHistoryModal() {
   const project = currentProject();
-  const jobs = project ? state.jobs.filter((job) => job.project_id === project.id) : state.jobs;
+  const jobs = jobsForCurrentProject();
+  const selectedJob = jobs.find((job) => job.id === state.logJobId) || jobs[0] || null;
   return `
     <div class="modal-backdrop">
-      <section class="modal-card modal-wide">
+      <section class="modal-card modal-wide job-history-modal">
         <div class="modal-header">
           <div>
-            <h2>Recent job history</h2>
+            <h2>Jobs &amp; Logs</h2>
             <p>${project ? `Recent jobs for ${escapeHtml(project.name)}` : "Recent reduced-workspace jobs"}</p>
           </div>
           <button class="ghost" type="button" data-action="close-modal">${icon("x")} Close</button>
@@ -505,7 +668,7 @@ function renderJobHistoryModal() {
         <div class="modal-body">
           <section class="compact-grid">
             ${jobs.map((job) => `
-              <button class="compact-tile" data-job-id="${escapeHtml(job.id)}" title="${escapeHtml(job.kind)}">
+              <button class="compact-tile ${selectedJob?.id === job.id ? "active" : ""}" type="button" data-log-job-id="${escapeHtml(job.id)}" title="${escapeHtml(job.kind)}">
                 ${icon("clock")}
                 <span>
                   <strong>${escapeHtml(job.kind)}</strong>
@@ -514,9 +677,34 @@ function renderJobHistoryModal() {
               </button>
             `).join("") || `<div class="empty-state">No recent jobs remembered in this browser yet.</div>`}
           </section>
+          <section class="job-log-panel">${renderJobLogPanel(selectedJob)}</section>
         </div>
       </section>
     </div>
+  `;
+}
+
+function renderJobLogPanel(selectedJob) {
+  const logs = selectedJob && selectedJob.id === state.jobLogsJobId ? state.jobLogs : [];
+  return `
+    <div class="job-log-head">
+      <div>
+        <strong>${selectedJob ? escapeHtml(selectedJob.kind) : "No job selected"}</strong>
+        <p>${selectedJob ? `${escapeHtml(String(selectedJob.status || "unknown"))} · ${formatDate(selectedJob.updated_at)}` : "Choose a job above to inspect its execution log."}</p>
+      </div>
+      ${selectedJob ? `<span class="job-log-meta">${escapeHtml(String(selectedJob.id).slice(0, 8))}</span>` : ""}
+    </div>
+    <div class="job-log-view">
+      ${selectedJob ? renderJobLogLines(logs, state.jobLogsLoading && state.jobLogsJobId === selectedJob.id) : `<div class="empty-state">No job selected.</div>`}
+    </div>
+  `;
+}
+
+function renderJobLogLines(logs, loading = false) {
+  if (loading) return `<div class="empty-state">Loading logs...</div>`;
+  if (!logs.length) return `<div class="empty-state">No logs available for this job yet.</div>`;
+  return `
+    <pre class="job-log-text">${escapeHtml(logs.map((entry) => `[${entry.level || "info"}] ${entry.message || ""}`).join("\n"))}</pre>
   `;
 }
 
@@ -538,7 +726,7 @@ function renderArtifactHistoryModal() {
         <div class="modal-body">
           <section class="compact-grid">
             ${artifacts.map((artifact) => `
-              <button class="compact-tile" data-action="open-artifact" data-artifact-id="${escapeHtml(artifact.id)}" title="${escapeHtml(artifact.path)}">
+              <button class="compact-tile" type="button" data-action="open-artifact" data-artifact-id="${escapeHtml(artifact.id)}" title="${escapeHtml(artifact.path)}">
                 ${icon("download")}
                 <span>
                   <strong>${escapeHtml(artifact.path)}</strong>
@@ -612,6 +800,7 @@ function bindEvents() {
     button.addEventListener("click", () => {
       state.selectedServiceId = button.dataset.serviceId;
       localStorage.setItem(SELECTED_SERVICE_KEY, state.selectedServiceId);
+      state.screen = "workspace";
       render();
     });
   });
@@ -623,12 +812,14 @@ function bindEvents() {
     });
   });
   root.querySelectorAll("[data-project-id]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      await selectProject(button.dataset.projectId);
-    });
-    button.addEventListener("dblclick", async () => {
-      await openProjectFiles(button.dataset.projectId);
-    });
+    if (button.classList.contains("project-item")) {
+      button.addEventListener("click", async () => {
+        await selectProject(button.dataset.projectId);
+      });
+      button.addEventListener("dblclick", async () => {
+        await openProjectFiles(button.dataset.projectId);
+      });
+    }
   });
   root.querySelectorAll("[data-job-kind]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -637,13 +828,10 @@ function bindEvents() {
       await startJob(button.dataset.jobKind, parameters);
     });
   });
-  root.querySelectorAll("[data-job-id]").forEach((button) => {
+  root.querySelectorAll("[data-log-job-id]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await selectJob(button.dataset.jobId);
+      await selectJobLog(button.dataset.logJobId);
     });
-  });
-  root.querySelectorAll("[data-dblaction]").forEach((button) => {
-    button.addEventListener("dblclick", onDoubleAction);
   });
   root.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", onAction);
@@ -701,6 +889,22 @@ async function onAction(event) {
     root.querySelector("#folder-input")?.click();
     return;
   }
+  if (action === "back-to-menu") {
+    state.projectMenuId = null;
+    state.screen = "menu";
+    render();
+    return;
+  }
+  if (action === "toggle-project-menu") {
+    const projectId = actionTargetId(event.currentTarget.dataset.projectId);
+    state.projectMenuId = state.projectMenuId === projectId ? null : projectId;
+    render();
+    return;
+  }
+  if (action === "delete-project") {
+    await deleteProject(actionTargetId(event.currentTarget.dataset.projectId));
+    return;
+  }
   if (action === "open-file") {
     await openFile(actionTargetId(event.currentTarget.dataset.fileId));
     return;
@@ -718,8 +922,7 @@ async function onAction(event) {
     return;
   }
   if (action === "open-job-history") {
-    state.modal = { type: "job-history" };
-    render();
+    await openJobHistoryModal(actionTargetId(event.currentTarget.dataset.jobId));
     return;
   }
   if (action === "open-artifact-history") {
@@ -729,19 +932,6 @@ async function onAction(event) {
   }
   if (action === "focus-projects") {
     root.querySelector(".project-stack")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-}
-
-function onDoubleAction(event) {
-  const action = event.currentTarget.dataset.dblaction;
-  if (action === "open-job-history") {
-    state.modal = { type: "job-history" };
-    render();
-    return;
-  }
-  if (action === "open-artifact-history") {
-    state.modal = { type: "artifact-history" };
-    render();
   }
 }
 
@@ -829,6 +1019,7 @@ async function loadProject(projectId) {
 async function selectProject(projectId) {
   if (!projectId) return;
   state.selectedProjectId = projectId;
+  state.projectMenuId = null;
   localStorage.setItem(SELECTED_PROJECT_KEY, projectId);
   await runAction(async () => {
     await loadProject(projectId);
@@ -974,7 +1165,16 @@ async function refreshRecentJobs() {
     state.selectedJobId = state.jobs[0]?.id || null;
     if (state.selectedJobId) localStorage.setItem(SELECTED_JOB_KEY, state.selectedJobId);
   }
+  if (!state.jobs.some((job) => job.id === state.logJobId)) {
+    state.logJobId = state.jobs[0]?.id || null;
+    if (state.logJobId) localStorage.setItem(LOG_JOB_KEY, state.logJobId);
+  }
   if (state.selectedJobId) await refreshJob(state.selectedJobId);
+  if (!state.logJobId) {
+    state.jobLogs = [];
+    state.jobLogsJobId = null;
+    localStorage.removeItem(LOG_JOB_KEY);
+  }
 }
 
 async function selectJob(jobId) {
@@ -986,9 +1186,78 @@ async function selectJob(jobId) {
   }, { silent: true });
 }
 
+async function selectJobLog(jobId) {
+  if (!jobId) return;
+  state.logJobId = jobId;
+  localStorage.setItem(LOG_JOB_KEY, jobId);
+  state.jobLogsJobId = jobId;
+  state.jobLogsLoading = true;
+  if (!syncJobHistoryModal()) {
+    render();
+  }
+  try {
+    const [job, logs] = await Promise.all([
+      api.getJob(jobId),
+      api.getJobLogs(jobId),
+    ]);
+    upsertJob(job);
+    if (state.logJobId !== jobId) return;
+    state.jobLogs = logs.items || [];
+  } catch (error) {
+    if (state.logJobId !== jobId) return;
+    state.jobLogs = [];
+    notify(error.message || "Could not load job logs");
+  } finally {
+    if (state.logJobId === jobId) {
+      state.jobLogsJobId = jobId;
+      state.jobLogsLoading = false;
+      if (!syncJobHistoryModal()) {
+        render();
+      }
+    }
+  }
+}
+
+async function openJobHistoryModal(preferredJobId = "") {
+  const jobs = jobsForCurrentProject();
+  const targetJobId = preferredJobId || jobs.find((job) => job.id === state.logJobId)?.id || jobs[0]?.id || null;
+  state.modal = { type: "job-history" };
+  render();
+  if (targetJobId) {
+    await selectJobLog(targetJobId);
+  } else {
+    state.logJobId = null;
+    state.jobLogs = [];
+    state.jobLogsJobId = null;
+    state.jobLogsLoading = false;
+    localStorage.removeItem(LOG_JOB_KEY);
+    render();
+  }
+}
+
+function syncJobHistoryModal() {
+  if (state.modal?.type !== "job-history") return false;
+  const modal = root.querySelector(".job-history-modal");
+  if (!modal) return false;
+  const jobs = jobsForCurrentProject();
+  const selectedJob = jobs.find((job) => job.id === state.logJobId) || jobs[0] || null;
+  modal.querySelectorAll("[data-log-job-id]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.logJobId === selectedJob?.id);
+  });
+  const panel = modal.querySelector(".job-log-panel");
+  if (panel) {
+    panel.innerHTML = renderJobLogPanel(selectedJob);
+  }
+  return true;
+}
+
 async function refreshJob(jobId) {
   const job = await api.getJob(jobId);
   upsertJob(job);
+  const logs = await api.getJobLogs(jobId);
+  if (state.selectedJobId === jobId) {
+    state.jobLogs = logs.items || [];
+  }
   if (["succeeded", "failed", "canceled"].includes(job.status) && job.project_id === state.selectedProjectId) {
     const producedVersionId = job.parameters?.produced_version_id || null;
     await loadProject(job.project_id);
@@ -1038,6 +1307,29 @@ async function downloadFile(fileId) {
       api.versionFileDownloadUrl(version.id, file.id),
       file.path.split("/").pop() || "file",
     );
+  });
+}
+
+async function deleteProject(projectId) {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return;
+  const confirmed = window.confirm(`Delete project "${project.name}"?`);
+  if (!confirmed) return;
+  await runAction(async () => {
+    await api.deleteProject(project.id);
+    if (state.selectedProjectId === project.id) {
+      state.selectedProjectId = null;
+      state.selectedVersionId = null;
+      state.selectedJobId = null;
+      state.files = [];
+      state.artifacts = [];
+      state.jobLogs = [];
+      localStorage.removeItem(SELECTED_PROJECT_KEY);
+      localStorage.removeItem(SELECTED_JOB_KEY);
+    }
+    state.projectMenuId = null;
+    await refreshAll();
+    notify("Project deleted");
   });
 }
 

@@ -93,8 +93,10 @@ async def create_version(
 async def list_versions(
     project_id: str,
     session: AsyncSession = Depends(db_session),
+    storage: StorageBackend = Depends(storage_dep),
 ) -> list[VersionRead]:
     try:
-        return await project_service.list_versions(session, project_id)
+        versions = await project_service.list_versions(session, project_id)
+        return [project_service.enrich_version_for_legacy_delivery(version, storage) for version in versions]
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

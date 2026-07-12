@@ -26,6 +26,7 @@ const paths = {
   trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/>',
   download: '<path d="M12 3v11"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>',
   back: '<path d="m15 18-6-6 6-6"/><path d="M21 12H9"/>',
+  more: '<circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none"/>',
 };
 
 export function icon(name) {

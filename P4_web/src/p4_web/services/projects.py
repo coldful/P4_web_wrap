@@ -1,4 +1,8 @@
 from copy import deepcopy
+import re
+import zipfile
+from pathlib import Path
+from xml.etree import ElementTree as ET
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +20,16 @@ from p4_web.persistence.models import (
     ProjectVersion,
 )
 from p4_web.storage import StorageBackend
+
+LEGACY_DELIVERY_STEPS = [
+    {"id": "new", "label": "Captured"},
+    {"id": "in_work", "label": "In Work"},
+    {"id": "freigegeben", "label": "Released"},
+    {"id": "in_translation", "label": "In Translation"},
+    {"id": "closed", "label": "Closed"},
+]
+
+_RE_ROW_DIGITS = re.compile(r"\d+")
 
 
 class NotFoundError(Exception):
@@ -191,6 +205,24 @@ async def get_version(session: AsyncSession, version_id: str) -> ProjectVersion:
     return version
 
 
+def enrich_version_for_legacy_delivery(version: ProjectVersion, storage: StorageBackend) -> ProjectVersion:
+    manifest = deepcopy(version.manifest or {})
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        files = []
+        manifest["files"] = files
+
+    metadata = manifest.get("project_sheet_metadata")
+    if not isinstance(metadata, dict):
+        metadata = _extract_project_sheet_metadata(version, storage, files)
+        if metadata:
+            manifest["project_sheet_metadata"] = metadata
+
+    manifest["legacy_delivery"] = _build_legacy_delivery_payload(files, metadata or {})
+    version.manifest = manifest
+    return version
+
+
 async def _slug_exists(session: AsyncSession, slug: str) -> bool:
     result = await session.execute(select(Project.id).where(Project.slug == slug))
     return result.scalar_one_or_none() is not None
@@ -298,3 +330,183 @@ async def _ensure_no_active_jobs(session: AsyncSession, project_id: str) -> None
     )
     if result.scalar_one_or_none() is not None:
         raise ConflictError("Project has active jobs")
+
+
+def _extract_project_sheet_metadata(
+    version: ProjectVersion,
+    storage: StorageBackend,
+    files: list[dict],
+) -> dict[str, str]:
+    project_sheet = next(
+        (
+            item
+            for item in files
+            if str(item.get("role", "")).lower() == "project_sheet"
+            and isinstance(item.get("path"), str)
+        ),
+        None,
+    )
+    if not project_sheet:
+        return {}
+
+    relative_path = str(project_sheet.get("path", "")).strip("/")
+    if not relative_path:
+        return {}
+    local_path = storage.resolve_local_path(f"{version.snapshot_prefix}/files/{relative_path}")
+    if not local_path:
+        return {}
+    return _read_project_sheet_keyvals(local_path)
+
+
+def _read_project_sheet_keyvals(path: Path) -> dict[str, str]:
+    if path.suffix.lower() not in {".xlsx", ".xlsm"}:
+        return {}
+    try:
+        with zipfile.ZipFile(path) as archive:
+            shared_strings = _read_shared_strings(archive)
+            values: dict[str, str] = {}
+            worksheet_names = sorted(
+                name
+                for name in archive.namelist()
+                if name.startswith("xl/worksheets/") and name.endswith(".xml")
+            )
+            for worksheet_name in worksheet_names:
+                root = ET.fromstring(archive.read(worksheet_name))
+                namespace = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+                for row in root.findall(".//main:sheetData/main:row", namespace):
+                    row_values: dict[str, str] = {}
+                    for cell in row.findall("main:c", namespace):
+                        ref = cell.attrib.get("r", "")
+                        column = _RE_ROW_DIGITS.sub("", ref)
+                        if not column:
+                            continue
+                        row_values[column] = _xlsx_cell_value(cell, shared_strings, namespace)
+                    key = str(row_values.get("A", "")).strip()
+                    if not key:
+                        continue
+                    values[key.lower()] = str(row_values.get("B", "")).strip()
+            return values
+    except (OSError, ValueError, zipfile.BadZipFile, ET.ParseError):
+        return {}
+
+
+def _read_shared_strings(archive: zipfile.ZipFile) -> list[str]:
+    try:
+        raw = archive.read("xl/sharedStrings.xml")
+    except KeyError:
+        return []
+    root = ET.fromstring(raw)
+    namespace = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    return [
+        "".join(node.text or "" for node in item.findall(".//main:t", namespace))
+        for item in root.findall("main:si", namespace)
+    ]
+
+
+def _xlsx_cell_value(cell: ET.Element, shared_strings: list[str], namespace: dict[str, str]) -> str:
+    cell_type = cell.attrib.get("t", "")
+    if cell_type == "inlineStr":
+        return "".join(node.text or "" for node in cell.findall(".//main:t", namespace))
+    value_node = cell.find("main:v", namespace)
+    value = value_node.text if value_node is not None and value_node.text is not None else ""
+    if cell_type == "s":
+        try:
+            return shared_strings[int(value)]
+        except (ValueError, IndexError):
+            return ""
+    return value
+
+
+def _build_legacy_delivery_payload(files: list[dict], metadata: dict[str, str]) -> dict[str, object]:
+    stage = _legacy_delivery_stage(files, metadata)
+    configured = _as_boolean(metadata.get("project_configured"))
+    source_xml = _source_xml_from_metadata(metadata)
+    return {
+        "stage": stage,
+        "configured": configured,
+        "source_xml": source_xml,
+        "steps": LEGACY_DELIVERY_STEPS,
+    }
+
+
+def _legacy_delivery_stage(files: list[dict], metadata: dict[str, str]) -> str:
+    if not any(str(item.get("role", "")).lower() == "project_sheet" for item in files):
+        return "error"
+
+    has_ok_pdf = any(_is_ok_pdf(item) for item in files)
+    has_lang_xml = any(_is_language_xml(item) for item in files)
+    configured = _as_boolean(metadata.get("project_configured"))
+    source_xml = _source_xml_from_metadata(metadata)
+    has_lang_export = configured and _has_translation_export(files, source_xml)
+
+    if has_ok_pdf:
+        if has_lang_export:
+            return "in_translation"
+        if has_lang_xml:
+            return "closed"
+        return "freigegeben"
+    if configured:
+        return "in_work"
+    return "new"
+
+
+def _source_xml_from_metadata(metadata: dict[str, str]) -> str | None:
+    trunk_or_branch = str(metadata.get("trunk_or_branch", "")).strip().lower()
+    if trunk_or_branch == "branch":
+        return metadata.get("branch_xml") or metadata.get("trunk_xml")
+    return metadata.get("trunk_xml") or metadata.get("branch_xml")
+
+
+def _as_boolean(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in {
+            "",
+            "0",
+            "false",
+            "falsch",
+            "no",
+            "nein",
+            "-",
+            "off",
+            "aus",
+            "none",
+        }
+    return bool(value)
+
+
+def _file_path(item: dict) -> str:
+    return str(item.get("path", "")).replace("\\", "/")
+
+
+def _is_ok_pdf(item: dict) -> bool:
+    path = _file_path(item).lower()
+    name = Path(path).name
+    return name.endswith(".pdf") and name.startswith("o.k._")
+
+
+def _is_language_xml(item: dict) -> bool:
+    path = _file_path(item).lower()
+    name = Path(path).name
+    if not name.endswith(".xml"):
+        return False
+    stem = Path(name).stem
+    return len(stem) >= 3 and stem[-3] == "_" and stem[-2:] != "de"
+
+
+def _has_translation_export(files: list[dict], source_xml: str | None) -> bool:
+    if not source_xml:
+        return False
+    source_prefix = Path(str(source_xml).replace("\\", "/")).stem + "_"
+    for item in files:
+        parts = [part for part in _file_path(item).split("/") if part]
+        if not parts:
+            continue
+        directory = parts[0]
+        lower = directory.lower()
+        if lower[-18:-2] != "target_language_":
+            continue
+        prefix = directory[:-18]
+        if prefix and prefix != source_prefix:
+            continue
+        return True
+    return False

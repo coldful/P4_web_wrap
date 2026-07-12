@@ -90,7 +90,7 @@ EOF
 install_helper_scripts() {
   log "Installing deploy scripts to $P4_WEB_WRAP/deploy"
   install -d -m 755 -o "$APP_USER" -g "$APP_USER" "$P4_WEB_WRAP/deploy"
-  for script in apply_update.sh apply_nginx_upload_limit.sh common.sh deploy.sh upload_update.sh push_update.sh setup_server.sh; do
+  for script in apply_update.sh apply_nginx_upload_limit.sh common.sh configure_production_env.sh deploy.sh upload_update.sh push_update.sh setup_server.sh; do
     if [[ -f "$SCRIPT_DIR/$script" ]]; then
       install -m 755 "$SCRIPT_DIR/$script" "$P4_WEB_WRAP/deploy/$script"
       chown "$APP_USER":"$APP_USER" "$P4_WEB_WRAP/deploy/$script"

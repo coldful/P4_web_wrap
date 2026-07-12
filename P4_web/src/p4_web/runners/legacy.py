@@ -3,6 +3,7 @@ import configparser
 import json
 import os
 import shlex
+import shutil
 from pathlib import Path
 
 from p4_web.domain.enums import ArtifactKind, JobKind
@@ -82,14 +83,21 @@ class LegacyP4Runner:
         language = str(context.parameters.get("language") or "de")
         command = self._build_command(context, app_path, interface_py, project_path, language)
         env = self._build_environment(context)
+        self._validate_command(command)
 
-        proc = await asyncio.create_subprocess_exec(
-            *command,
-            cwd=str(app_path),
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=str(app_path),
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        except FileNotFoundError as exc:
+            raise RunnerExecutionError(
+                f"Legacy runner executable not found: {command[0]}",
+                logs=self._missing_executable_logs(command, exc),
+            ) from exc
         try:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=self.timeout_seconds)
         except TimeoutError as exc:
@@ -198,6 +206,37 @@ class LegacyP4Runner:
             if output_file is not None:
                 command.extend(["--output-file", str(output_file)])
         return command
+
+    def _validate_command(self, command: list[str]) -> None:
+        if not command:
+            raise RunnerExecutionError(
+                "Legacy runner command is empty",
+                logs=["Configure P4_WEB_LEGACY_RUNNER_COMMAND or install python2.7."],
+            )
+        executable = command[0]
+        if Path(executable).is_file():
+            return
+        if shutil.which(executable):
+            return
+        raise RunnerExecutionError(
+            f"Legacy runner executable not found: {executable}",
+            logs=self._missing_executable_logs(command),
+        )
+
+    def _missing_executable_logs(
+        self,
+        command: list[str],
+        exc: FileNotFoundError | None = None,
+    ) -> list[str]:
+        logs = [f"Command: {shlex.join(command)}"]
+        if exc is not None:
+            logs.append(str(exc))
+        logs.append(
+            "On production servers, legacy jobs run through Docker. "
+            "Set P4_WEB_LEGACY_RUNNER_COMMAND in P4_web/.env or ensure "
+            f"{self.python_executable!r} is installed."
+        )
+        return logs
 
     def _build_environment(self, context: RunnerContext) -> dict[str, str]:
         env = os.environ.copy()

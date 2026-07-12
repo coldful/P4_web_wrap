@@ -3,7 +3,7 @@ from pathlib import Path
 
 from p4_web.domain.enums import ArtifactKind, JobKind
 from p4_web.runners.legacy import LegacyP4Runner
-from p4_web.runners.ports import RunnerContext
+from p4_web.runners.ports import RunnerContext, RunnerExecutionError
 
 
 def test_legacy_runner_exports_job_parameters_in_environment() -> None:
@@ -25,6 +25,27 @@ def test_legacy_runner_exports_job_parameters_in_environment() -> None:
         "language": "de",
         "schema": "proced.xsd",
     }
+
+
+def test_legacy_runner_reports_missing_executable() -> None:
+    runner = LegacyP4Runner(python_executable="python2.7-missing")
+    context = RunnerContext(
+        job_id="job-1",
+        project_id="project-1",
+        version_id="version-1",
+        kind=JobKind.XSL_FO,
+        parameters={"project_path": "/tmp/workspace/project"},
+        workspace_dir=Path("/tmp/workspace"),
+        legacy_p4_app_path=Path("/tmp/P4_app"),
+    )
+
+    try:
+        runner._validate_command(["python2.7-missing", "/tmp/helper.py", "xsl-fo"])
+    except RunnerExecutionError as exc:
+        assert "python2.7-missing" in str(exc)
+        assert exc.logs[0].startswith("Command:")
+    else:
+        raise AssertionError("Expected RunnerExecutionError")
 
 
 def test_legacy_runner_builds_helper_command_for_generate_lists() -> None:

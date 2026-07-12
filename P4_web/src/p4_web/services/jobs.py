@@ -228,7 +228,7 @@ def build_runner(settings: Settings) -> RunnerPort:
     if settings.enable_legacy_runner:
         return LegacyP4Runner(
             python_executable=settings.legacy_python_executable,
-            command_template=settings.legacy_runner_command,
+            command_template=settings.resolved_legacy_runner_command(),
             timeout_seconds=settings.legacy_runner_timeout_seconds,
             pdf_artifact_globs=settings.legacy_pdf_artifact_globs,
         )

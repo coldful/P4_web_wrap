@@ -172,6 +172,16 @@ Or upload + apply from your workstation:
 Server `.env` is never overwritten. After the first install, make sure
 `P4_web/.env` on the server has production values for legacy runner and CORS.
 
+To configure legacy jobs through Docker (required for XSL-FO, TeXML PDF, etc.):
+
+```bash
+ssh ubuntu@YOUR_SERVER '/srv/p4/app/P4_web_wrap/deploy/configure_production_env.sh'
+sudo systemctl restart p4-web
+```
+
+Or set `P4_WEB_LEGACY_RUNNER_COMMAND` manually — see
+[P4_web/.env.example](P4_web/.env.example).
+
 For nginx, use [deploy/nginx-p4.conf.example](deploy/nginx-p4.conf.example).
 Project folder import requires `client_max_body_size` above the default 1 MB.
 
@@ -222,6 +232,31 @@ On production this usually fails for one of two reasons:
 If the API is accessed directly on port `8000` instead of through nginx, add the
 frontend origin to `P4_WEB_CORS_ORIGINS` in `/srv/p4/app/P4_web_wrap/P4_web/.env`
 and restart `p4-web`.
+
+### Legacy jobs fail with `[Errno 2] No such file or directory`
+
+This usually means the backend tried to run `python2.7` directly on the host,
+but production servers execute legacy work through Docker instead (same as
+`run_p4_stack.sh` locally).
+
+Fix on the server:
+
+```bash
+/srv/p4/app/P4_web_wrap/deploy/configure_production_env.sh
+sudo systemctl restart p4-web
+```
+
+Also verify the Docker image exists:
+
+```bash
+docker image inspect p4-legacy-runner
+```
+
+If missing, deploy the legacy runner:
+
+```bash
+./deploy/deploy.sh legacy
+```
 
 ### `Missing required path: ../P4_app/interface.py`
 

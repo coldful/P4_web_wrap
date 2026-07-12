@@ -180,8 +180,30 @@ sudo ./deploy/setup_server.sh
 
 Файл `.env` на сервере не перезаписывается.
 
+Для nginx используйте [deploy/nginx-p4.conf.example](deploy/nginx-p4.conf.example).
+Импорт папки проекта требует `client_max_body_size` больше стандартного 1 MB.
+
 
 ## Частые проблемы
+
+### Импорт папки проекта на сервере (`NetworkError`)
+
+Браузер отправляет всю выбранную папку на `POST /api/sync/import-upload`.
+
+1. **Лимит nginx** — по умолчанию `client_max_body_size` = 1 MB. Маленькие проекты
+   проходят, большие — нет. Исправление:
+
+   ```bash
+   ./deploy/deploy.sh nginx
+   ```
+
+2. **Неверный API URL** — на сервере должен быть `http://IP_СЕРВЕРА/api`, не
+   `http://localhost:8000/api`. Очистите localStorage:
+
+   ```javascript
+   localStorage.removeItem('p4web.client.apiBase');
+   location.reload();
+   ```
 
 ### `Missing required path: ../P4_app/interface.py`
 

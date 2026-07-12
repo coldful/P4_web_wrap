@@ -172,9 +172,56 @@ Or upload + apply from your workstation:
 Server `.env` is never overwritten. After the first install, make sure
 `P4_web/.env` on the server has production values for legacy runner and CORS.
 
+For nginx, use [deploy/nginx-p4.conf.example](deploy/nginx-p4.conf.example).
+Project folder import requires `client_max_body_size` above the default 1 MB.
+
 
 
 ## Common Problems
+
+### Project folder import fails on the server (`NetworkError`)
+
+Browser import sends the whole selected folder to `POST /api/sync/import-upload`.
+On production this usually fails for one of two reasons:
+
+1. **nginx upload limit** — default `client_max_body_size` is 1 MB. A project with
+   many files exceeds that and the browser shows `NetworkError`.
+
+   Fix on the server:
+
+   ```bash
+   ./deploy/deploy.sh nginx
+   ```
+
+   Or manually:
+
+   ```bash
+   sudo /srv/p4/app/P4_web_wrap/deploy/apply_nginx_upload_limit.sh
+   ```
+
+   Small projects may upload under the default 1 MB limit; larger folders (many
+   files or images) need this change. Check folder size locally with:
+
+   ```bash
+   du -sh /path/to/your/project
+   ```
+
+2. **Wrong API URL in the browser** — the reduced UI uses the same API base as the
+   main client. On a server it must be `http://YOUR_SERVER/api` (same origin), not
+   `http://localhost:8000/api`. New client builds auto-detect this, but clear stale
+   localStorage if needed:
+
+   ```javascript
+   localStorage.removeItem('p4web.client.apiBase');
+   location.reload();
+   ```
+
+   In the full client, use the connection field at the top and set the API base to
+   `http://YOUR_SERVER/api` or `https://YOUR_DOMAIN/api`.
+
+If the API is accessed directly on port `8000` instead of through nginx, add the
+frontend origin to `P4_WEB_CORS_ORIGINS` in `/srv/p4/app/P4_web_wrap/P4_web/.env`
+and restart `p4-web`.
 
 ### `Missing required path: ../P4_app/interface.py`
 

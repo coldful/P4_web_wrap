@@ -12,6 +12,7 @@
 #   ./deploy/deploy.sh legacy       # P4_legacy_runner + docker build
 #   ./deploy/deploy.sh p4-app       # P4_app + docker build
 #   ./deploy/deploy.sh scripts      # deploy/ helpers only
+#   ./deploy/deploy.sh nginx        # raise nginx upload limit for project import
 
 set -euo pipefail
 
@@ -57,6 +58,7 @@ Components:
   legacy     P4_legacy_runner + docker build
   p4-app     P4_app + docker build
   scripts    deploy/ helpers on the server
+  nginx      apply 512m upload limit for project folder import
 
 Configuration: deploy/config.env (see config.env.example)
 EOF
@@ -212,10 +214,16 @@ deploy_all() {
   activate_all
 }
 
+deploy_nginx() {
+  deploy_scripts
+  ssh_run "sudo $P4_REMOTE_WEB_WRAP/deploy/apply_nginx_upload_limit.sh"
+}
+
 case "${COMPONENT:-}" in
   -h|--help|help) usage; exit 0 ;;
   all) require_host; deploy_all; log "Deploy complete" ;;
   scripts) require_host; deploy_scripts; log "Deploy scripts updated" ;;
+  nginx) require_host; deploy_nginx; log "nginx upload limit applied" ;;
   frontend) require_host; deploy_frontend; log "Frontend deployed" ;;
   backend) require_host; deploy_backend; log "Backend deployed" ;;
   legacy) require_host; deploy_legacy; log "Legacy runner deployed" ;;

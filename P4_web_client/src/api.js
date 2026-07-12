@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE = "http://localhost:8000/api";
+const LOCAL_API_BASE = "http://localhost:8000/api";
 const STORAGE_KEY = "p4web.client.apiBase";
 
 export class ApiError extends Error {
@@ -10,21 +10,83 @@ export class ApiError extends Error {
   }
 }
 
+function isLocalHostName(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+function isLocalApiBase(value) {
+  try {
+    const url = new URL(value);
+    return isLocalHostName(url.hostname);
+  } catch {
+    return value.includes("localhost") || value.includes("127.0.0.1");
+  }
+}
+
+function detectDefaultApiBase() {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    const { hostname, origin } = window.location;
+    if (!isLocalHostName(hostname)) {
+      return `${origin}/api`;
+    }
+  }
+  return LOCAL_API_BASE;
+}
+
+function resolveApiBase() {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  const detected = detectDefaultApiBase();
+  if (!stored) {
+    return detected;
+  }
+  if (typeof window !== "undefined" && isLocalApiBase(stored) && !isLocalHostName(window.location.hostname)) {
+    return detected;
+  }
+  return stored;
+}
+
 export function getApiBase() {
-  return localStorage.getItem(STORAGE_KEY) || DEFAULT_API_BASE;
+  return resolveApiBase();
 }
 
 export function setApiBase(value) {
   const clean = value.trim().replace(/\/$/, "");
-  localStorage.setItem(STORAGE_KEY, clean || DEFAULT_API_BASE);
+  localStorage.setItem(STORAGE_KEY, clean || detectDefaultApiBase());
 }
 
 export function buildApiUrl(path) {
   return `${getApiBase()}${path}`;
 }
 
+function parseResponseBody(text) {
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { detail: text };
+  }
+}
+
+function networkErrorMessage(error) {
+  const apiBase = getApiBase();
+  if (error?.name === "TypeError" || String(error?.message || "").includes("NetworkError")) {
+    return `Cannot reach API at ${apiBase}. Check the API URL, nginx client_max_body_size, and CORS settings.`;
+  }
+  return error?.message || "Network request failed";
+}
+
+async function performFetch(path, options = {}) {
+  try {
+    return await fetch(buildApiUrl(path), options);
+  } catch (error) {
+    throw new ApiError(networkErrorMessage(error), 0, null);
+  }
+}
+
 export async function request(path, options = {}) {
-  const response = await fetch(buildApiUrl(path), {
+  const response = await performFetch(path, {
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {}),
@@ -33,7 +95,7 @@ export async function request(path, options = {}) {
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  const data = parseResponseBody(text);
   if (!response.ok) {
     const message = data?.detail || response.statusText || "API request failed";
     throw new ApiError(message, response.status, data);
@@ -42,31 +104,34 @@ export async function request(path, options = {}) {
 }
 
 export async function requestForm(path, body, options = {}) {
-  const response = await fetch(buildApiUrl(path), {
+  const response = await performFetch(path, {
     ...options,
     method: options.method || "POST",
     body,
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  const data = parseResponseBody(text);
   if (!response.ok) {
-    const message = data?.detail || response.statusText || "API request failed";
+    let message = data?.detail || response.statusText || "API request failed";
+    if (response.status === 413) {
+      message = "Upload too large for the server (nginx client_max_body_size).";
+    }
     throw new ApiError(message, response.status, data);
   }
   return data;
 }
 
 async function rawRequest(url, options = {}) {
-  const response = await fetch(url, options);
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (error) {
+    throw new ApiError(networkErrorMessage(error), 0, null);
+  }
   if (!response.ok) {
     const text = await response.text();
-    let data = null;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = null;
-    }
+    const data = parseResponseBody(text);
     const message = data?.detail || response.statusText || "API request failed";
     throw new ApiError(message, response.status, data);
   }

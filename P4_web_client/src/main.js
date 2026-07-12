@@ -1,4 +1,4 @@
-import { api, getApiBase, setApiBase } from "./api.js?v=20260704-import-upload-fix1";
+import { api, getApiBase, setApiBase } from "./api.js?v=20260712-server-import1";
 import { icon, legacyIcon } from "./icons.js?v=20260704-import-upload-fix1";
 import {
   getFileJobConfig,

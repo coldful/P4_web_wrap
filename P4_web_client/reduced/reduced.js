@@ -1,4 +1,4 @@
-import { api } from "../src/api.js?v=20260711-reduced1";
+import { api } from "../src/api.js?v=20260712-server-import1";
 import { MODULE_JOB_SCHEMAS } from "../src/job-config.js?v=20260711-reduced1";
 import {
   escapeHtml,

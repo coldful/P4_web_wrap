@@ -18,6 +18,10 @@ http://localhost:5173/reduced/
 The API base defaults to `http://localhost:8000/api` and can be changed in the
 top connection field.
 
+When the UI is opened from a production host (not localhost), the client
+auto-detects `https://your-host/api` or `http://your-host/api` unless a different
+value is stored in the browser.
+
 The File ribbon can create an empty project or import a local project folder.
 Local import paths must be visible to the `P4_web` backend process. Imported
 folders become a project version, so later imports can target an existing project.

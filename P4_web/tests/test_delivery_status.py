@@ -23,8 +23,9 @@ def test_parse_delivery_date_accepts_common_formats() -> None:
     assert parse_delivery_date("") is None
 
 
-def test_delivery_status_initialized_requires_key() -> None:
+def test_delivery_status_initialized_requires_value() -> None:
     assert not delivery_status_initialized({})
+    assert not delivery_status_initialized({"delivery_status": ""})
     assert delivery_status_initialized({"delivery_status": "0"})
 
 
@@ -46,21 +47,35 @@ def test_build_delivery_state_from_project_sheet_metadata() -> None:
     assert state["current_deadline"] is not None
 
 
-def test_build_delivery_state_returns_none_without_delivery_status_key() -> None:
+def test_build_delivery_state_returns_none_without_delivery_status_value() -> None:
     assert build_delivery_state({"delivery_date": "2026-12-01"}) is None
+    assert build_delivery_state({"delivery_date": "2026-12-01", "delivery_status": ""}) is None
 
 
-def test_build_enriched_delivery_state_allows_advance_without_delivery_status_key() -> None:
+def test_build_enriched_delivery_state_without_delivery_status_key_is_inactive() -> None:
     state = build_enriched_delivery_state(
         {"delivery_date": "2026-12-01"},
         {"stage": "new"},
         has_project_sheet=True,
     )
     assert state is not None
-    assert state["can_advance"] is True
+    assert state["can_advance"] is False
     assert state["source"] == "project_sheet"
     assert state["status"] == 0
     assert state["has_delivery_status"] is False
+    assert state["is_activated"] is False
+
+
+def test_build_enriched_delivery_state_with_empty_delivery_status_is_inactive() -> None:
+    state = build_enriched_delivery_state(
+        {"delivery_date": "2026-12-01", "delivery_status": ""},
+        {"stage": "new"},
+        has_project_sheet=True,
+    )
+    assert state is not None
+    assert state["can_advance"] is False
+    assert state["has_delivery_status"] is False
+    assert state["is_activated"] is False
 
 
 def test_parse_delivery_state_from_runner_logs() -> None:

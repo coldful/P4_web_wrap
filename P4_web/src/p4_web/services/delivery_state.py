@@ -80,7 +80,7 @@ def parse_delivery_interval_days(value: object, default: int = DELIVERY_STATUS_D
 
 
 def delivery_status_initialized(metadata: dict[str, str]) -> bool:
-    return "delivery_status" in metadata
+    return normalize_delivery_status(metadata.get("delivery_status"), default=None) is not None
 
 
 LEGACY_STAGE_TO_STATUS = {
@@ -101,7 +101,7 @@ def build_enriched_delivery_state(
     state = build_delivery_state(metadata)
     if state:
         enriched = dict(state)
-        enriched["can_advance"] = has_project_sheet
+        enriched["can_advance"] = has_project_sheet and bool(state.get("has_delivery_status"))
         enriched["source"] = "project_sheet"
         return enriched
 
@@ -113,17 +113,16 @@ def build_enriched_delivery_state(
     if stage == "error":
         return None
 
-    inferred_status = 0
     delivery_date = parse_delivery_date(metadata.get("delivery_date"))
     return {
-        "status": inferred_status,
+        "status": 0,
         "current_deadline": None,
         "is_complete": False,
         "is_overdue": False,
-        "is_activated": bool(delivery_date),
+        "is_activated": False,
         "delivery_date": delivery_date.isoformat() if delivery_date else None,
         "has_delivery_status": False,
-        "can_advance": True,
+        "can_advance": False,
         "source": "project_sheet",
         "steps": DELIVERY_STAGE_LABELS,
     }

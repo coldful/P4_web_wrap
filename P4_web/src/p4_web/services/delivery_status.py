@@ -13,7 +13,13 @@ from p4_web.services.sync_import import import_workspace_version
 from p4_web.services.workspaces import materialize_version_workspace
 from p4_web.storage import StorageBackend
 
-from p4_web.services.delivery_state import build_delivery_state, parse_delivery_state_from_runner_logs
+from p4_web.services.delivery_folders import apply_delivery_status_advance_side_effects
+from p4_web.services.delivery_state import (
+    build_delivery_state,
+    delivery_status_initialized,
+    parse_delivery_state_from_runner_logs,
+)
+from p4_web.services.projects import _find_project_sheet_path, _read_project_sheet_keyvals
 
 __all__ = [
     "DeliveryStatusError",
@@ -54,6 +60,15 @@ async def advance_delivery_status(
     workspace_dir.mkdir(parents=True, exist_ok=True)
     try:
         project_path = await materialize_version_workspace(session, storage, version, workspace_dir)
+        project_sheet_path = _find_project_sheet_path(project_path)
+        sheet_metadata = (
+            _read_project_sheet_keyvals(project_sheet_path) if project_sheet_path is not None else {}
+        )
+        if not delivery_status_initialized(sheet_metadata):
+            raise DeliveryStatusError(
+                "Delivery status is not configured in the project sheet"
+            )
+        apply_delivery_status_advance_side_effects(project_path, sheet_metadata)
         context = RunnerContext(
             job_id=f"delivery-{uuid.uuid4().hex}",
             project_id=version.project_id,

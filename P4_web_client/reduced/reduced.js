@@ -172,9 +172,8 @@ function deliveryStatusModel(version) {
       ? `${status} of ${steps.length} delivery stages complete.`
       : "Click to advance delivery status.";
     if (deliveryState.source === "project_sheet" && !deliveryState.has_delivery_status) {
-      caption = status > 0
-        ? `${status} of ${steps.length} delivery stages complete. Click to advance.`
-        : "Click to advance delivery status in the project sheet.";
+      title = "Not configured";
+      caption = "Delivery status is not configured in this project sheet.";
     }
     if (deliveryState.is_complete) {
       caption = "Delivery status completed. Click to reset.";
@@ -185,7 +184,12 @@ function deliveryStatusModel(version) {
     } else if (!deliveryState.is_activated && deliveryState.has_delivery_status) {
       caption = "Delivery status is not activated yet. Click to advance.";
     }
-    const clickable = Boolean(deliveryState.can_advance && version && !state.busy);
+    const clickable = Boolean(
+      deliveryState.can_advance &&
+      deliveryState.has_delivery_status &&
+      version &&
+      !state.busy
+    );
     return {
       title,
       caption,
@@ -1055,6 +1059,10 @@ async function onAction(event) {
 async function advanceDeliveryStatus() {
   const version = currentVersion();
   if (!version || state.busy) {
+    return;
+  }
+  const deliveryState = version?.manifest?.delivery_state;
+  if (!deliveryState?.has_delivery_status || !deliveryState?.can_advance) {
     return;
   }
   await runAction(async () => {

@@ -343,6 +343,14 @@ async def _ensure_no_active_jobs(session: AsyncSession, project_id: str) -> None
         raise ConflictError("Project has active jobs")
 
 
+def _find_project_sheet_path(project_root: Path) -> Path | None:
+    for pattern in ("*.proj.xlsm", "*.proj.xlsx", "*.proj.xls"):
+        matches = sorted(project_root.glob(pattern))
+        if matches:
+            return matches[0]
+    return None
+
+
 def _extract_project_sheet_metadata(
     version: ProjectVersion,
     storage: StorageBackend,

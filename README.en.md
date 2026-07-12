@@ -108,6 +108,72 @@ legacy runner will not be launched automatically through `run_p4_stack.sh`.
   `sqlite+aiosqlite:///./var/p4_web.db`
 - Local backend data is stored under `P4_web/var/`.
 
+
+## Production deploy
+
+Configure once:
+
+```bash
+cp deploy/config.env.example deploy/config.env
+# edit P4_DEPLOY_HOST and remote paths
+```
+
+A full deploy syncs frontend (including `/reduced/`), backend source,
+`pyproject.toml`, legacy runner, rebuilds the Docker image, restarts services,
+and runs a health check.
+
+### A. Direct deploy (recommended)
+
+```bash
+./deploy/deploy.sh
+```
+
+### B. SFTP + staging
+
+One-time server setup:
+
+```bash
+sudo ./deploy/setup_server.sh
+```
+
+Upload via SFTP (FileZilla / WinSCP) as user `p4deploy` to `/updates/`:
+
+```text
+updates/P4_web_wrap/P4_web_client/
+updates/P4_web_wrap/P4_web/src/
+updates/P4_web_wrap/P4_web/pyproject.toml
+updates/P4_web_wrap/requirements.txt
+updates/P4_web_wrap/P4_legacy_runner/
+updates/P4_app/                     # optional
+```
+
+Then on the server:
+
+```bash
+/srv/p4/bin/apply-update all
+```
+
+Or upload + apply from your workstation:
+
+```bash
+./deploy/push_update.sh all
+```
+
+### Partial deploy
+
+```bash
+./deploy/deploy.sh frontend
+./deploy/deploy.sh backend
+./deploy/deploy.sh legacy
+./deploy/deploy.sh p4-app
+./deploy/deploy.sh scripts
+```
+
+Server `.env` is never overwritten. After the first install, make sure
+`P4_web/.env` on the server has production values for legacy runner and CORS.
+
+
+
 ## Common Problems
 
 ### `Missing required path: ../P4_app/interface.py`

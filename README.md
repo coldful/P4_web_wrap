@@ -131,6 +131,56 @@ python3 -m http.server 5173 --bind 127.0.0.1
   `sqlite+aiosqlite:///./var/p4_web.db`
 - Локальные данные backend пишет в `P4_web/var/`.
 
+
+## Деплой на production
+
+Один раз настроить:
+
+```bash
+cp deploy/config.env.example deploy/config.env
+# указать P4_DEPLOY_HOST и пути на сервере
+```
+
+Полный деплой синхронизирует frontend (включая `/reduced/`), backend,
+`pyproject.toml`, legacy runner, пересобирает Docker-образ и проверяет health.
+
+### A. Прямой деплой (рекомендуется)
+
+```bash
+./deploy/deploy.sh
+```
+
+### B. SFTP + staging
+
+Однократно на сервере:
+
+```bash
+sudo ./deploy/setup_server.sh
+```
+
+Загрузка через SFTP (пользователь `p4deploy`, каталог `/updates/`), затем:
+
+```bash
+/srv/p4/bin/apply-update all
+```
+
+Или с рабочей машины:
+
+```bash
+./deploy/push_update.sh all
+```
+
+Частичный деплой:
+
+```bash
+./deploy/deploy.sh frontend
+./deploy/deploy.sh backend
+./deploy/deploy.sh legacy
+```
+
+Файл `.env` на сервере не перезаписывается.
+
+
 ## Частые проблемы
 
 ### `Missing required path: ../P4_app/interface.py`

@@ -8,6 +8,8 @@ P4_web/.env
 P4_web/venv/
 P4_web/var/
 
+deploy/config.env
+
 P4_legacy_runner/.pytest_cache/
 
 *.log

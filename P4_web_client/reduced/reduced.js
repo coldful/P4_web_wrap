@@ -185,7 +185,7 @@ function renderProjectPanel() {
             <button
               class="project-item ${item.id === state.selectedProjectId ? "active" : ""}"
               data-project-id="${escapeHtml(item.id)}"
-              title="Double-click to open snapshot files"
+              title="Click to select project"
             >
               <strong>${escapeHtml(item.name)}</strong>
               <span>${escapeHtml(item.slug)}</span>
@@ -338,14 +338,14 @@ function renderActivityPanel() {
               type="button"
               data-action="open-artifact-history"
               data-dblaction="open-artifact-history"
-              title="Double-click to open artifact list"
+              title="Click to open artifact list"
               ${artifacts.length ? "" : "disabled"}
             >
               ${icon("download")}
             </button>
           </div>
           ${recentArtifact ? `
-            <button class="artifact-button recent-artifact-card" data-artifact-id="${escapeHtml(recentArtifact.id)}">
+            <button class="artifact-button recent-artifact-card" data-action="open-artifact" data-artifact-id="${escapeHtml(recentArtifact.id)}">
               ${icon("download")}
               <span>
                 <strong>${escapeHtml(recentArtifact.path)}</strong>
@@ -362,7 +362,7 @@ function renderActivityPanel() {
               type="button"
               data-action="open-job-history"
               data-dblaction="open-job-history"
-              title="Double-click to open recent job history"
+              title="Click to open recent job history"
               ${jobs.length ? "" : "disabled"}
             >
               ${icon("clock")}
@@ -389,6 +389,7 @@ function renderModal() {
   if (state.modal.type === "project-files") return renderProjectFilesModal();
   if (state.modal.type === "artifact-history") return renderArtifactHistoryModal();
   if (state.modal.type === "job-history") return renderJobHistoryModal();
+  if (state.modal.type === "preview") return renderPreviewModal();
   return "";
 }
 
@@ -473,7 +474,7 @@ function renderProjectFilesModal() {
         <div class="modal-body">
           <section class="file-grid">
             ${state.files.map((file) => `
-              <button class="file-tile" data-file-id="${escapeHtml(file.id)}" title="${escapeHtml(file.path)}">
+              <button class="file-tile" data-action="open-file" data-file-id="${escapeHtml(file.id)}" title="${escapeHtml(file.path)}">
                 ${icon("file")}
                 <span>
                   <strong>${escapeHtml(file.path)}</strong>
@@ -537,7 +538,7 @@ function renderArtifactHistoryModal() {
         <div class="modal-body">
           <section class="compact-grid">
             ${artifacts.map((artifact) => `
-              <button class="compact-tile" data-artifact-id="${escapeHtml(artifact.id)}" title="${escapeHtml(artifact.path)}">
+              <button class="compact-tile" data-action="open-artifact" data-artifact-id="${escapeHtml(artifact.id)}" title="${escapeHtml(artifact.path)}">
                 ${icon("download")}
                 <span>
                   <strong>${escapeHtml(artifact.path)}</strong>
@@ -550,6 +551,49 @@ function renderArtifactHistoryModal() {
       </section>
     </div>
   `;
+}
+
+function renderPreviewModal() {
+  const modal = state.modal;
+  if (!modal || modal.type !== "preview") return "";
+  return `
+    <div class="modal-backdrop">
+      <section class="modal-card preview-modal">
+        <div class="modal-header preview-header">
+          <button class="ghost" type="button" data-action="close-modal">${icon("back")} Back</button>
+          <div class="preview-title">
+            <h2>${escapeHtml(modal.title)}</h2>
+            <p>${escapeHtml(modal.subtitle || "")}</p>
+          </div>
+          <button type="button" class="secondary" data-action="${escapeHtml(modal.downloadAction)}" ${modal.downloadIdAttr}>
+            ${icon("download")} Download
+          </button>
+        </div>
+        <div class="preview-body">
+          ${renderPreviewBody(modal)}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderPreviewBody(modal) {
+  if (modal.loading) return `<div class="empty-state">Loading preview...</div>`;
+  if (modal.error) return `<div class="empty-state">${escapeHtml(modal.error)}</div>`;
+  if (modal.previewKind === "text") {
+    return `<pre class="preview-text">${escapeHtml(modal.textContent || "")}</pre>`;
+  }
+  if (modal.previewKind === "image") {
+    return `
+      <div class="preview-image-wrap">
+        <img class="preview-image" src="${escapeHtml(modal.sourceUrl)}" alt="${escapeHtml(modal.title)}" />
+      </div>
+    `;
+  }
+  if (modal.previewKind === "pdf") {
+    return `<iframe class="preview-frame" src="${escapeHtml(modal.sourceUrl)}" title="${escapeHtml(modal.title)}"></iframe>`;
+  }
+  return `<div class="empty-state">Preview is not available for this file.</div>`;
 }
 
 function renderBusy() {
@@ -591,16 +635,6 @@ function bindEvents() {
       const parameters = {};
       if (button.dataset.jobSchema) parameters.schema = state.moduleSchema;
       await startJob(button.dataset.jobKind, parameters);
-    });
-  });
-  root.querySelectorAll("[data-artifact-id]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      await downloadArtifact(button.dataset.artifactId);
-    });
-  });
-  root.querySelectorAll("[data-file-id]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      await downloadFile(button.dataset.fileId);
     });
   });
   root.querySelectorAll("[data-job-id]").forEach((button) => {
@@ -667,6 +701,22 @@ async function onAction(event) {
     root.querySelector("#folder-input")?.click();
     return;
   }
+  if (action === "open-file") {
+    await openFile(actionTargetId(event.currentTarget.dataset.fileId));
+    return;
+  }
+  if (action === "open-artifact") {
+    await openArtifact(actionTargetId(event.currentTarget.dataset.artifactId));
+    return;
+  }
+  if (action === "download-file") {
+    await downloadFile(actionTargetId(event.currentTarget.dataset.fileId));
+    return;
+  }
+  if (action === "download-artifact") {
+    await downloadArtifact(actionTargetId(event.currentTarget.dataset.artifactId));
+    return;
+  }
   if (action === "open-job-history") {
     state.modal = { type: "job-history" };
     render();
@@ -693,6 +743,10 @@ function onDoubleAction(event) {
     state.modal = { type: "artifact-history" };
     render();
   }
+}
+
+function actionTargetId(value) {
+  return value || "";
 }
 
 function onFolderChange(event) {
@@ -788,6 +842,94 @@ async function openProjectFiles(projectId) {
   }
   state.modal = { type: "project-files", projectId };
   render();
+}
+
+function previewKindFor(item) {
+  const path = String(item?.path || "").toLowerCase();
+  const contentType = String(item?.content_type || "").toLowerCase();
+  if (contentType.includes("pdf") || path.endsWith(".pdf")) return "pdf";
+  if (
+    contentType.startsWith("image/") ||
+    [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp"].some((suffix) => path.endsWith(suffix))
+  ) {
+    return "image";
+  }
+  if (
+    contentType.startsWith("text/") ||
+    contentType.includes("xml") ||
+    [".txt", ".xml", ".log", ".fo"].some((suffix) => path.endsWith(suffix))
+  ) {
+    return "text";
+  }
+  return null;
+}
+
+function isPreviewSupported(item) {
+  return Boolean(previewKindFor(item));
+}
+
+async function openFile(fileId) {
+  const version = currentVersion();
+  const file = state.files.find((item) => item.id === fileId);
+  if (!version || !file) return;
+  if (!isPreviewSupported(file)) {
+    await downloadFile(fileId);
+    return;
+  }
+  await openStoredObjectPreview({
+    item: file,
+    contentUrl: api.versionFileContentUrl(version.id, file.id),
+    downloadAction: "download-file",
+    downloadIdAttr: `data-file-id="${escapeHtml(file.id)}"`,
+  });
+}
+
+async function openArtifact(artifactId) {
+  const artifact = state.artifacts.find((item) => item.id === artifactId);
+  if (!artifact) return;
+  if (!isPreviewSupported(artifact)) {
+    await downloadArtifact(artifactId);
+    return;
+  }
+  await openStoredObjectPreview({
+    item: artifact,
+    contentUrl: api.artifactContentUrl(artifact.id),
+    downloadAction: "download-artifact",
+    downloadIdAttr: `data-artifact-id="${escapeHtml(artifact.id)}"`,
+  });
+}
+
+async function openStoredObjectPreview({ item, contentUrl, downloadAction, downloadIdAttr }) {
+  const previewKind = previewKindFor(item);
+  if (!previewKind) {
+    notify("Preview is not available for this file type");
+    return;
+  }
+  const modal = {
+    type: "preview",
+    title: item.path,
+    subtitle: item.content_type || item.kind || "",
+    previewKind,
+    sourceUrl: previewKind === "text" ? "" : contentUrl,
+    textContent: "",
+    loading: previewKind === "text",
+    error: "",
+    downloadAction,
+    downloadIdAttr,
+  };
+  state.modal = modal;
+  render();
+  if (previewKind !== "text") return;
+  try {
+    const text = await api.fetchTextFromUrl(contentUrl);
+    if (state.modal !== modal) return;
+    state.modal = { ...modal, loading: false, textContent: text };
+    render();
+  } catch (error) {
+    if (state.modal !== modal) return;
+    state.modal = { ...modal, loading: false, error: error.message || "Preview failed" };
+    render();
+  }
 }
 
 async function startJob(kind, overrides = {}) {

@@ -729,6 +729,14 @@ a {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.preview-modal {
+  width: min(96vw, 1480px);
+  height: min(92vh, 1040px);
+  max-height: calc(100vh - 24px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .modal-header,
 .modal-footer {
   padding: 18px 20px;
@@ -759,6 +767,85 @@ a {
   gap: 16px;
   min-height: 0;
   overflow: auto;
+}
+
+.preview-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.preview-title {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.preview-title h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.preview-title p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.preview-body {
+  min-height: 0;
+  padding: 12px;
+  background: #f5f8fb;
+  overflow: auto;
+}
+
+.preview-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.preview-text {
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 16px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview-image-wrap {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background:
+    linear-gradient(45deg, #eef3f8 25%, transparent 25%),
+    linear-gradient(-45deg, #eef3f8 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #eef3f8 75%),
+    linear-gradient(-45deg, transparent 75%, #eef3f8 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  padding: 18px;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: var(--shadow);
 }
 
 .file-grid {
@@ -959,6 +1046,11 @@ a {
 
   .compact-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .preview-header {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 }
 

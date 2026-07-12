@@ -29,6 +29,7 @@ class JobKind(StrEnum):
     CHECK_INDEX = "check_index"
     CONVERT_SAP_TO_BIT_XML = "convert_sap_to_bit_xml"
     CONVERT_OPMANUAL_TO_BIT_XML = "convert_opmanual_to_bit_xml"
+    ADVANCE_DELIVERY_STATUS = "advance_delivery_status"
 
 
 class JobStatus(StrEnum):

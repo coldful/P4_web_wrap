@@ -152,6 +152,11 @@ class ApprovalDecision(BaseModel):
     comment: str | None = None
 
 
+class DeliveryStatusAdvanceRead(BaseModel):
+    version: VersionRead
+    delivery_state: dict[str, Any]
+
+
 class HealthRead(BaseModel):
     status: str
     app: str

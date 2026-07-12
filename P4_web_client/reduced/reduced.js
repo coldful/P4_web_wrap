@@ -126,14 +126,83 @@ function reducedLegacyIcon(fileName, className = "") {
 }
 
 const DELIVERY_FLOW = [
-  { id: "new", label: "Captured" },
-  { id: "in_work", label: "In Work" },
-  { id: "freigegeben", label: "Released" },
-  { id: "in_translation", label: "In Translation" },
-  { id: "closed", label: "Closed" },
+  { status: 1, id: "new", label: "Captured" },
+  { status: 2, id: "in_work", label: "In Work" },
+  { status: 3, id: "freigegeben", label: "Released" },
+  { status: 4, id: "in_translation", label: "In Translation" },
+  { status: 5, id: "closed", label: "Closed" },
 ];
 
+function deliveryStepsFromState(deliveryState) {
+  const steps = Array.isArray(deliveryState?.steps) && deliveryState.steps.length
+    ? deliveryState.steps
+    : DELIVERY_FLOW;
+  return steps.map((step) => ({
+    id: step.id || `stage-${step.status}`,
+    label: step.label || `Stage ${step.status}`,
+    status: step.status,
+  }));
+}
+
 function deliveryStatusModel(version) {
+  const deliveryState = version?.manifest?.delivery_state;
+  if (deliveryState) {
+    const steps = deliveryStepsFromState(deliveryState);
+    const status = Number(deliveryState.status) || 0;
+    const currentIndex = status > 0 ? status - 1 : -1;
+    let title = "Not started";
+    if (status > 0) {
+      title = steps[currentIndex]?.label || `Stage ${status}`;
+    } else if (!deliveryState.is_activated) {
+      title = "Not activated";
+    }
+    const progress = status > 0 ? Math.round((status / steps.length) * 100) : 0;
+    let tone = "work";
+    if (deliveryState.is_overdue) {
+      tone = "bad";
+    } else if (deliveryState.is_complete) {
+      tone = "good";
+    } else if (!deliveryState.is_activated && status <= 0) {
+      tone = "muted";
+    }
+    let caption = status > 0
+      ? `${status} of ${steps.length} delivery stages complete.`
+      : "Click to advance delivery status.";
+    if (deliveryState.source === "project_sheet" && !deliveryState.has_delivery_status) {
+      caption = status > 0
+        ? `${status} of ${steps.length} delivery stages complete. Click to advance.`
+        : "Click to advance delivery status in the project sheet.";
+    }
+    if (deliveryState.is_complete) {
+      caption = "Delivery status completed. Click to reset.";
+    } else if (deliveryState.is_overdue && deliveryState.current_deadline) {
+      caption = `Current step overdue since ${deliveryState.current_deadline}. Click to advance.`;
+    } else if (deliveryState.current_deadline) {
+      caption = `Current step deadline: ${deliveryState.current_deadline}. Click to advance.`;
+    } else if (!deliveryState.is_activated && deliveryState.has_delivery_status) {
+      caption = "Delivery status is not activated yet. Click to advance.";
+    }
+    const clickable = Boolean(deliveryState.can_advance && version && !state.busy);
+    return {
+      title,
+      caption,
+      progress,
+      tone,
+      clickable,
+      tooltip: clickable ? "Click to advance delivery status" : "",
+      steps: steps.map((step, index) => ({
+        ...step,
+        state: currentIndex < 0
+          ? "pending"
+          : index < currentIndex
+            ? "complete"
+            : index === currentIndex
+              ? "current"
+              : "pending",
+      })),
+    };
+  }
+
   const legacyDelivery = version?.manifest?.legacy_delivery;
   if (legacyDelivery?.stage) {
     const steps = Array.isArray(legacyDelivery.steps) && legacyDelivery.steps.length
@@ -146,15 +215,19 @@ function deliveryStatusModel(version) {
         caption: "Legacy project status could not be resolved from the project sheet.",
         progress: 0,
         tone: "muted",
+        clickable: false,
+        tooltip: "",
         steps: steps.map((step) => ({ ...step, state: "pending" })),
       };
     }
     const progress = Math.round(((currentIndex + 1) / steps.length) * 100);
     return {
       title: steps[currentIndex]?.label || "Captured",
-      caption: `${currentIndex + 1} of ${steps.length} legacy delivery stages complete.`,
+      caption: `${currentIndex + 1} of ${steps.length} inferred workflow stages.`,
       progress,
       tone: legacyDelivery.stage === "closed" ? "good" : "work",
+      clickable: false,
+      tooltip: "",
       steps: steps.map((step, index) => ({
         ...step,
         state: index < currentIndex ? "complete" : index === currentIndex ? "current" : "pending",
@@ -168,23 +241,32 @@ function deliveryStatusModel(version) {
       caption: "Import or select a project snapshot first.",
       progress: 0,
       tone: "idle",
+      clickable: false,
+      tooltip: "",
       steps: DELIVERY_FLOW.map((step) => ({ ...step, state: "pending" })),
     };
   }
 
   return {
     title: "Unavailable",
-    caption: "Legacy delivery status could not be resolved from this project snapshot.",
+    caption: "Delivery status is not configured in this project sheet.",
     progress: 0,
     tone: "muted",
+    clickable: false,
+    tooltip: "",
     steps: DELIVERY_FLOW.map((step) => ({ ...step, state: "pending" })),
   };
 }
 
 function renderDeliveryProgress(version) {
   const model = deliveryStatusModel(version);
+  const clickable = model.clickable;
   return `
-    <div class="delivery-progress tone-${escapeHtml(model.tone)}">
+    <div
+      class="delivery-progress tone-${escapeHtml(model.tone)}${clickable ? " is-clickable" : ""}"
+      ${clickable ? 'data-action="advance-delivery-status" role="button" tabindex="0"' : ""}
+      ${model.tooltip && clickable ? `title="${escapeHtml(model.tooltip)}"` : ""}
+    >
       <div class="delivery-progress-head">
         <span>Delivery status</span>
         <strong>${escapeHtml(model.title)}</strong>
@@ -835,6 +917,15 @@ function bindEvents() {
   });
   root.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", onAction);
+    if (button.dataset.action === "advance-delivery-status") {
+      button.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+        event.preventDefault();
+        onAction({ currentTarget: button });
+      });
+    }
   });
   root.querySelector("#module-schema-select")?.addEventListener("change", (event) => {
     state.moduleSchema = event.target.value;
@@ -933,6 +1024,24 @@ async function onAction(event) {
   if (action === "focus-projects") {
     root.querySelector(".project-stack")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+  if (action === "advance-delivery-status") {
+    await advanceDeliveryStatus();
+  }
+}
+
+async function advanceDeliveryStatus() {
+  const version = currentVersion();
+  if (!version || state.busy) {
+    return;
+  }
+  await runAction(async () => {
+    const result = await api.advanceDeliveryStatus(version.id);
+    state.selectedVersionId = result.version.id;
+    await loadProject(currentProject().id);
+    const status = result.delivery_state?.status;
+    const label = deliveryStepsFromState(result.delivery_state).find((step) => step.status === status)?.label;
+    notify(label ? `Delivery status: ${label}` : "Delivery status updated");
+  });
 }
 
 function actionTargetId(value) {
@@ -1006,7 +1115,10 @@ async function refreshAll() {
 async function loadProject(projectId) {
   const versions = await api.listVersions(projectId);
   state.versions = [...versions].sort((left, right) => right.version_number - left.version_number);
-  state.selectedVersionId = state.versions[0]?.id || null;
+  const preferred = state.selectedVersionId;
+  if (!preferred || !state.versions.some((item) => item.id === preferred)) {
+    state.selectedVersionId = state.versions[0]?.id || null;
+  }
   if (state.selectedVersionId) {
     state.files = await api.listVersionFiles(state.selectedVersionId);
     state.artifacts = await api.listVersionArtifacts(state.selectedVersionId);

@@ -390,6 +390,19 @@ a {
   gap: 10px;
 }
 
+.delivery-progress.is-clickable {
+  cursor: pointer;
+}
+
+.delivery-progress.is-clickable:hover {
+  opacity: 0.92;
+}
+
+.delivery-progress.is-clickable:focus-visible {
+  outline: 2px solid #7da7d6;
+  outline-offset: 2px;
+}
+
 .delivery-progress-head {
   display: flex;
   align-items: baseline;

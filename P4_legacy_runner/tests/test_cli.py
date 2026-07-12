@@ -167,6 +167,34 @@ def test_generate_lists_builds_helper_command() -> None:
     assert "--xml-file" in command
 
 
+def test_run_web_job_maps_advance_delivery_status() -> None:
+    args = cli.parse_args(
+        [
+            "run-web-job",
+            "--operation",
+            "advance_delivery_status",
+            "--project-path",
+            "/work/project",
+        ]
+    )
+
+    assert cli.build_web_job_argv(args) == [
+        "advance-delivery-status",
+        "--project-path",
+        "/work/project",
+        "--language",
+        "de",
+    ]
+
+
+def test_advance_delivery_status_builds_helper_command() -> None:
+    command = build(["advance-delivery-status", "--project-path", "/work/project"])
+
+    assert command[:3] == ["python2.7", cli.helper_path(), "advance-delivery-status"]
+    assert "--p4-app-path" in command
+    assert "--project-path" in command
+
+
 def test_run_web_job_maps_opmanual_files_to_cli_command() -> None:
     args = cli.parse_args(
         [

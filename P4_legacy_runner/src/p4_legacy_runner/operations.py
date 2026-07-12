@@ -178,6 +178,22 @@ HELPER_OPERATIONS = {
         "mutates_project": False,
         "description": "Convert ETK/SAP XML export to bitplant XML.",
     },
+    "advance-delivery-status": {
+        "web_kind": "advance_delivery_status",
+        "requires_project": True,
+        "artifact_globs": [
+            "**/*.proj.xls",
+            "**/*.proj.xlsm",
+            "001/**",
+            "002/**",
+            "003/**",
+            "004/**",
+            "005/**",
+            "pdf/**",
+        ],
+        "mutates_project": True,
+        "description": "Advance delivery_status through FamilyProject.advance_delivery_status().",
+    },
 }
 
 

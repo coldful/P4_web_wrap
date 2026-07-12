@@ -241,6 +241,28 @@ def run_texml_pdf(args):
     return 0
 
 
+def run_advance_delivery_status(args):
+    _, project_manager = setup_legacy_services(args.p4_app_path)
+    project = find_project(project_manager, args.project_path, args.project_name)
+    state = project.advance_delivery_status()
+    status = state.get("status", 0)
+    overdue = int(bool(state.get("is_overdue", 0)))
+    complete = int(bool(state.get("is_complete", 0)))
+    activated = int(bool(state.get("is_activated", 0)))
+    print(
+        "DELIVERY_STATE status={0} overdue={1} complete={2} activated={3}".format(
+            status,
+            overdue,
+            complete,
+            activated,
+        )
+    )
+    deadline = state.get("current_deadline", None)
+    if deadline is not None:
+        print("DELIVERY_STATE deadline={0}".format(deadline.isoformat()))
+    return 0
+
+
 def run_convert_sap_to_bit_xml(args):
     setup_legacy_services(args.p4_app_path)
     import Configurator
@@ -276,6 +298,7 @@ def build_parser():
             "xsl-fo",
             "texml-pdf",
             "convert-sap-to-bit-xml",
+            "advance-delivery-status",
         ],
     )
     parser.add_argument("--p4-app-path", required=True)
@@ -309,6 +332,10 @@ def main(argv=None):
         if not args.etk_file:
             parser.error("--etk-file is required for convert-sap-to-bit-xml")
         return run_convert_sap_to_bit_xml(args)
+    if args.command == "advance-delivery-status":
+        if not args.project_path:
+            parser.error("--project-path is required for advance-delivery-status")
+        return run_advance_delivery_status(args)
     parser.error("Unsupported helper command: {0}".format(args.command))
     return 2
 

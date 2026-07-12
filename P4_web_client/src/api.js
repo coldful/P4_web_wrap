@@ -183,6 +183,10 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getVersion: (versionId) => request(`/versions/${versionId}`),
+  advanceDeliveryStatus: (versionId) =>
+    request(`/versions/${versionId}/delivery-status/advance`, {
+      method: "POST",
+    }),
   listVersionFiles: (versionId) => request(`/versions/${versionId}/files`),
 
   createJob: (payload) =>

@@ -32,6 +32,7 @@ class LegacyP4Runner:
         JobKind.GENERATE_LISTS: "generate-lists",
         JobKind.CHECK_INDEX: "check-index",
         JobKind.CONVERT_SAP_TO_BIT_XML: "convert-sap-to-bit-xml",
+        JobKind.ADVANCE_DELIVERY_STATUS: "advance-delivery-status",
     }
     ARTIFACT_PATTERNS: dict[JobKind, list[tuple[str, ArtifactKind, str | None]]] = {
         JobKind.GENERATE_HTML: [

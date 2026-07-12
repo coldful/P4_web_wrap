@@ -571,7 +571,7 @@ def build_parser():
     )
     server.add_argument("connection")
 
-    for name in ("generate-lists", "check-index", "xsl-fo", "texml-pdf"):
+    for name in ("generate-lists", "check-index", "xsl-fo", "texml-pdf", "advance-delivery-status"):
         command_parser = sub.add_parser(name, help=HELPER_OPERATIONS[name]["description"])
         add_project_arguments(command_parser)
         command_parser.add_argument("--xml-file", default=None)

@@ -1,6 +1,7 @@
 from copy import deepcopy
 import re
 import zipfile
+from datetime import date
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -19,6 +20,7 @@ from p4_web.persistence.models import (
     Project,
     ProjectVersion,
 )
+from p4_web.services.delivery_state import build_enriched_delivery_state
 from p4_web.storage import StorageBackend
 
 LEGACY_DELIVERY_STEPS = [
@@ -214,11 +216,20 @@ def enrich_version_for_legacy_delivery(version: ProjectVersion, storage: Storage
 
     metadata = manifest.get("project_sheet_metadata")
     if not isinstance(metadata, dict):
-        metadata = _extract_project_sheet_metadata(version, storage, files)
-        if metadata:
-            manifest["project_sheet_metadata"] = metadata
+        metadata = {}
+    extracted = _extract_project_sheet_metadata(version, storage, files)
+    if extracted:
+        metadata = extracted
+        manifest["project_sheet_metadata"] = extracted
 
-    manifest["legacy_delivery"] = _build_legacy_delivery_payload(files, metadata or {})
+    legacy_delivery = _build_legacy_delivery_payload(files, metadata or {})
+    manifest["legacy_delivery"] = legacy_delivery
+    has_project_sheet = _has_project_sheet(files)
+    manifest["delivery_state"] = build_enriched_delivery_state(
+        metadata or {},
+        legacy_delivery,
+        has_project_sheet=has_project_sheet,
+    )
     version.manifest = manifest
     return version
 
@@ -359,8 +370,15 @@ def _extract_project_sheet_metadata(
 
 
 def _read_project_sheet_keyvals(path: Path) -> dict[str, str]:
-    if path.suffix.lower() not in {".xlsx", ".xlsm"}:
-        return {}
+    name_lower = path.name.lower()
+    if path.suffix.lower() in {".xlsx", ".xlsm"} or name_lower.endswith((".proj.xlsx", ".proj.xlsm")):
+        return _read_xlsx_project_sheet_keyvals(path)
+    if path.suffix.lower() == ".xls" or name_lower.endswith(".proj.xls"):
+        return _read_xls_project_sheet_keyvals(path)
+    return {}
+
+
+def _read_xlsx_project_sheet_keyvals(path: Path) -> dict[str, str]:
     try:
         with zipfile.ZipFile(path) as archive:
             shared_strings = _read_shared_strings(archive)
@@ -390,6 +408,39 @@ def _read_project_sheet_keyvals(path: Path) -> dict[str, str]:
         return {}
 
 
+def _read_xls_project_sheet_keyvals(path: Path) -> dict[str, str]:
+    try:
+        import xlrd
+    except ImportError:
+        return {}
+
+    try:
+        workbook = xlrd.open_workbook(str(path), formatting_info=False)
+    except (OSError, ValueError, xlrd.XLRDError):
+        return {}
+
+    values: dict[str, str] = {}
+    for sheet in workbook.sheets():
+        for row_index in range(sheet.nrows):
+            key = str(sheet.cell(row_index, 0).value).strip().lower()
+            if not key or key == "none":
+                continue
+            values[key] = _xls_cell_text(sheet.cell(row_index, 1), workbook)
+    return values
+
+
+def _xls_cell_text(cell: object, workbook: object) -> str:
+    import xlrd
+
+    if cell.ctype == xlrd.XL_CELL_DATE:
+        date_tuple = xlrd.xldate_as_tuple(cell.value, workbook.datemode)
+        if date_tuple[0:3] != (0, 0, 0):
+            return date(*date_tuple[:3]).isoformat()
+    if cell.ctype == xlrd.XL_CELL_NUMBER and cell.value == int(cell.value):
+        return str(int(cell.value))
+    return str(cell.value).strip()
+
+
 def _read_shared_strings(archive: zipfile.ZipFile) -> list[str]:
     try:
         raw = archive.read("xl/sharedStrings.xml")
@@ -415,6 +466,10 @@ def _xlsx_cell_value(cell: ET.Element, shared_strings: list[str], namespace: dic
         except (ValueError, IndexError):
             return ""
     return value
+
+
+def _has_project_sheet(files: list[dict]) -> bool:
+    return any(str(item.get("role", "")).lower() == "project_sheet" for item in files)
 
 
 def _build_legacy_delivery_payload(files: list[dict], metadata: dict[str, str]) -> dict[str, object]:

@@ -119,11 +119,11 @@ function renderRibbon(project, version) {
         legacyTool("new-project", "000pp001.bmp", "Create project"),
       ]),
       ribbonGroup("Open from folder", [
-        legacyTool("open-upload-import", "penguin.png", "Change folder"),
-        legacyDropdown("project-directory", "penguin.png", "Select project", renderProjectMenu("project-directory")),
+        legacyTool("open-upload-import", "icon:folder", "Change folder"),
+        legacyDropdown("project-directory", "icon:search", "Select project", renderProjectMenu("project-directory")),
       ]),
       ribbonGroup("Open directly", [
-        legacyDropdown("last-used", "penguin.png", "Last used", renderProjectMenu("last-used")),
+        legacyDropdown("last-used", "icon:clock", "Last used", renderProjectMenu("last-used")),
         legacyTool("open-upload-import", "gtk-open.png", "Archived"),
       ]),
     ],
@@ -146,8 +146,8 @@ function renderRibbon(project, version) {
         legacyTool("job:generate_html", "000pp028.bmp", "HTML", disabled),
       ]),
       ribbonGroup("Aladin", [
-        legacyTool("job:generate_html", "penguin.png", "Demo", disabled),
-        legacyUnavailable("penguin.png", "HTML for one code"),
+        legacyTool("job:generate_html", "icon:play", "Demo", disabled),
+        legacyUnavailable("icon:html", "HTML for one code"),
         legacyTool("job:generate_html", "000pp028.bmp", "HTML site", disabled),
       ]),
       ribbonGroup("Data source", [
@@ -184,7 +184,7 @@ function renderRibbon(project, version) {
           disabled,
         ),
         legacyUnavailable("000pp014.bmp", "Open keyseq file"),
-        legacyUnavailable("penguin.png", "Create P2 project"),
+        legacyUnavailable("icon:plus", "Create P2 project"),
       ]),
       ribbonGroup("Debug", [
         legacyUnavailable("000pp003.bmp", "More messages"),
@@ -197,24 +197,24 @@ function renderRibbon(project, version) {
       ]),
       ribbonGroup("Conversion", [
         legacyTool("job:convert_sap_to_bit_xml", "000pp017.bmp", "ETK SAP to bitplant XML", projectDisabled),
-        legacyTool("job:convert_opmanual_to_bit_xml", "penguin.png", "Opmanual to bitplant XML", projectDisabled),
+        legacyTool("job:convert_opmanual_to_bit_xml", "icon:copy", "Opmanual to bitplant XML", projectDisabled),
       ]),
     ],
     Config: [
       ribbonGroup("Resources", [
         legacyUnavailable("000pp002.bmp", "Stylesheets"),
         legacyUnavailable("000pp012.bmp", "Images"),
-        legacyUnavailable("penguin.png", "Upload files"),
+        legacyUnavailable("icon:upload", "Upload files"),
       ]),
       ribbonGroup("Settings", [
         legacyTool("focus-api-base", "000pp003.bmp", "Server IP"),
         legacyUnavailable("000pp004.bmp", "Paths"),
-        legacyUnavailable("penguin.png", "Layout"),
+        legacyUnavailable("icon:settings", "Layout"),
       ]),
       ribbonGroup("Variables", [
-        legacyUnavailable("penguin.png", "Defaults by keyseq"),
-        legacyUnavailable("penguin.png", "Defaults in template"),
-        legacyUnavailable("penguin.png", "Reconfigure project"),
+        legacyUnavailable("icon:list", "Defaults by keyseq"),
+        legacyUnavailable("icon:file", "Defaults in template"),
+        legacyUnavailable("icon:settings", "Reconfigure project"),
       ]),
     ],
   };
@@ -250,7 +250,7 @@ function ribbonGroup(title, buttons) {
 function legacyTool(action, iconFile, title, disabled = "") {
   return `
     <button class="tool-button legacy-tool" data-action="${escapeHtml(action)}" title="${escapeHtml(title)}" ${disabled}>
-      ${legacyIcon(iconFile)}
+      ${renderLegacyRibbonIcon(iconFile)}
       <span>${escapeHtml(title)}</span>
     </button>
   `;
@@ -259,7 +259,7 @@ function legacyTool(action, iconFile, title, disabled = "") {
 function legacyTabTool(tab, iconFile, title, disabled = "") {
   return `
     <button class="tool-button legacy-tool" data-tab="${escapeHtml(tab)}" title="${escapeHtml(title)}" ${disabled}>
-      ${legacyIcon(iconFile)}
+      ${renderLegacyRibbonIcon(iconFile)}
       <span>${escapeHtml(title)}</span>
     </button>
   `;
@@ -268,7 +268,7 @@ function legacyTabTool(tab, iconFile, title, disabled = "") {
 function legacyUnavailable(iconFile, title) {
   return `
     <button class="tool-button legacy-tool unavailable" title="${escapeHtml(title)} is not available in the web version yet" disabled>
-      ${legacyIcon(iconFile)}
+      ${renderLegacyRibbonIcon(iconFile)}
       <span>${escapeHtml(title)}</span>
     </button>
   `;
@@ -278,7 +278,7 @@ function legacyDropdown(menuId, iconFile, title, menuHtml, disabled = "") {
   return `
     <div class="ribbon-menu-wrap">
       <button class="tool-button legacy-tool dropdown-only" data-action="toggle-menu" data-menu-id="${escapeHtml(menuId)}" title="${escapeHtml(title)}" ${disabled}>
-        ${legacyIcon(iconFile)}
+        ${renderLegacyRibbonIcon(iconFile)}
         <span>${escapeHtml(title)}</span>
         <span class="drop-mark" aria-hidden="true"></span>
       </button>
@@ -291,7 +291,7 @@ function legacyHybrid(action, menuId, iconFile, title, menuHtml, disabled = "") 
   return `
     <div class="legacy-hybrid ribbon-menu-wrap">
       <button class="tool-button legacy-tool hybrid-main" data-action="${escapeHtml(action)}" title="${escapeHtml(title)}" ${disabled}>
-        ${legacyIcon(iconFile)}
+        ${renderLegacyRibbonIcon(iconFile)}
         <span>${escapeHtml(title)}</span>
       </button>
       <button class="hybrid-drop" data-action="toggle-menu" data-menu-id="${escapeHtml(menuId)}" title="${escapeHtml(title)} variants" ${disabled}>
@@ -300,6 +300,13 @@ function legacyHybrid(action, menuId, iconFile, title, menuHtml, disabled = "") 
       ${menuHtml}
     </div>
   `;
+}
+
+function renderLegacyRibbonIcon(iconSpec) {
+  if (iconSpec.startsWith("icon:")) {
+    return icon(iconSpec.slice(5)).replace('class="icon"', 'class="icon legacy-svg-icon"');
+  }
+  return legacyIcon(iconSpec);
 }
 
 function renderMenu(menuId, items) {

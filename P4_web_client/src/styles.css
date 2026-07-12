@@ -310,6 +310,11 @@ button {
   image-rendering: auto;
 }
 
+.legacy-svg-icon {
+  width: 28px;
+  height: 28px;
+}
+
 .ribbon-menu-wrap {
   position: relative;
   display: inline-flex;

@@ -14,6 +14,9 @@ const SELECTED_JOB_KEY = "p4web.reduced.selectedJobId";
 const LOG_JOB_KEY = "p4web.reduced.logJobId";
 const SELECTED_SERVICE_KEY = "p4web.reduced.selectedService";
 const LANGUAGE_KEY = "p4web.reduced.language";
+const PROJECT_CLICK_DELAY_MS = 280;
+
+let projectClickTimer = null;
 
 const SERVICES = [
   {
@@ -409,7 +412,7 @@ function renderProjectPanel() {
               <button
                 class="project-item ${item.id === state.selectedProjectId ? "active" : ""}"
                 data-project-id="${escapeHtml(item.id)}"
-                title="Click to select project"
+                title="Click to select · Double-click to browse files"
               >
                 <strong>${escapeHtml(item.name)}</strong>
                 <span>${escapeHtml(item.slug)}</span>
@@ -427,6 +430,14 @@ function renderProjectPanel() {
               </button>
               ${item.id === state.projectMenuId ? `
                 <div class="project-menu">
+                  <button
+                    class="project-menu-item"
+                    type="button"
+                    data-action="open-project-files"
+                    data-project-id="${escapeHtml(item.id)}"
+                  >
+                    ${icon("folder")} Browse files
+                  </button>
                   <button
                     class="project-menu-item project-menu-item-danger"
                     type="button"
@@ -895,10 +906,18 @@ function bindEvents() {
   });
   root.querySelectorAll("[data-project-id]").forEach((button) => {
     if (button.classList.contains("project-item")) {
-      button.addEventListener("click", async () => {
-        await selectProject(button.dataset.projectId);
+      button.addEventListener("click", () => {
+        const projectId = button.dataset.projectId;
+        window.clearTimeout(projectClickTimer);
+        projectClickTimer = window.setTimeout(async () => {
+          projectClickTimer = null;
+          await selectProject(projectId);
+        }, PROJECT_CLICK_DELAY_MS);
       });
-      button.addEventListener("dblclick", async () => {
+      button.addEventListener("dblclick", async (event) => {
+        event.preventDefault();
+        window.clearTimeout(projectClickTimer);
+        projectClickTimer = null;
         await openProjectFiles(button.dataset.projectId);
       });
     }
@@ -990,6 +1009,10 @@ async function onAction(event) {
     const projectId = actionTargetId(event.currentTarget.dataset.projectId);
     state.projectMenuId = state.projectMenuId === projectId ? null : projectId;
     render();
+    return;
+  }
+  if (action === "open-project-files") {
+    await openProjectFiles(actionTargetId(event.currentTarget.dataset.projectId));
     return;
   }
   if (action === "delete-project") {
@@ -1140,9 +1163,12 @@ async function selectProject(projectId) {
 
 async function openProjectFiles(projectId) {
   if (!projectId) return;
+  window.clearTimeout(projectClickTimer);
+  projectClickTimer = null;
   if (projectId !== state.selectedProjectId) {
     await selectProject(projectId);
   }
+  state.projectMenuId = null;
   state.modal = { type: "project-files", projectId };
   render();
 }

@@ -34,12 +34,12 @@ p4_install_backend_deps() {
 
   log "Installing Python dependencies (editable P4_web)"
   if [[ "$dry_run" -eq 1 ]]; then
-    echo "  [dry-run] cd $web_wrap/P4_web && $venv/bin/pip install -r ../requirements.txt"
+    echo "  [dry-run] cd $web_wrap && $venv/bin/pip install -r requirements.txt"
     return 0
   fi
   (
-    cd "$web_wrap/P4_web"
-    "$venv/bin/pip" install -r ../requirements.txt
+    cd "$web_wrap"
+    "$venv/bin/pip" install -r requirements.txt
   )
 }
 
